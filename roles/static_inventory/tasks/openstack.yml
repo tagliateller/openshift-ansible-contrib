@@ -1,0 +1,65 @@
+---
+- no_log: true
+  block:
+    - name: fetch all nodes from openstack shade dynamic inventory
+      command: shade-inventory --list
+      register: registered_nodes_output
+      when: refresh_inventory|bool
+
+    - name: set fact for openstack inventory cluster nodes
+      set_fact:
+        registered_nodes: "{{ (registered_nodes_output.stdout | from_json) | json_query(q) }}"
+      vars:
+        q: "[] | [?metadata.clusterid=='{{stack_name}}']"
+      when:
+        - refresh_inventory|bool
+
+    - name: set_fact for openstack inventory nodes
+      set_fact:
+        registered_bastion_nodes: "{{ (registered_nodes_output.stdout | from_json) | json_query(q) }}"
+        registered_nodes_floating: "{{ (registered_nodes_output.stdout | from_json) | json_query(q2) }}"
+      vars:
+        q: "[] | [?metadata.group=='infra.{{stack_name}}']"
+        q2: "[] | [?metadata.clusterid=='{{stack_name}}'] | [?public_v4!='']"
+      when:
+        - refresh_inventory|bool
+
+    - name: Add cluster nodes w/o floating IPs to inventory
+      with_items: "{{ registered_nodes|difference(registered_nodes_floating) }}"
+      add_host:
+        name: '{{ item.name }}'
+        groups: '{{ item.metadata.group }}'
+        ansible_host: "{% if use_bastion|bool %}{{ item.name }}{% else %}{{ item.private_v4 }}{% endif %}"
+        ansible_fqdn: '{{ item.name }}'
+        ansible_user: '{{ ssh_user }}'
+        ansible_private_key_file: '{{ private_ssh_key }}'
+        ansible_ssh_extra_args: '-F {{ ssh_config_path }}'
+        private_v4: '{{ item.private_v4 }}'
+
+    - name: Add cluster nodes with floating IPs to inventory
+      with_items: "{{ registered_nodes_floating }}"
+      add_host:
+        name: '{{ item.name }}'
+        groups: '{{ item.metadata.group }}'
+        ansible_host: "{% if use_bastion|bool %}{{ item.name }}{% else %}{{ item.public_v4 }}{% endif %}"
+        ansible_fqdn: '{{ item.name }}'
+        ansible_user: '{{ ssh_user }}'
+        ansible_private_key_file: '{{ private_ssh_key }}'
+        ansible_ssh_extra_args: '-F {{ ssh_config_path }}'
+        private_v4: '{{ item.private_v4 }}'
+        public_v4: '{{ item.public_v4 }}'
+
+    - name: Add bastion node to inventory
+      add_host:
+        name: bastion
+        groups: bastions
+        ansible_host: '{{ registered_bastion_nodes[0].public_v4 }}'
+        ansible_fqdn: '{{ registered_bastion_nodes[0].name }}'
+        ansible_user: '{{ ssh_user }}'
+        ansible_private_key_file: '{{ private_ssh_key }}'
+        ansible_ssh_extra_args: '-F {{ ssh_config_path }}'
+        private_v4: '{{ registered_bastion_nodes[0].private_v4 }}'
+        public_v4: '{{ registered_bastion_nodes[0].public_v4 }}'
+      when:
+        - registered_bastion_nodes is defined
+        - use_bastion|bool

@@ -54,5 +54,11 @@ wildcardzone: "myapps"
 # nodevmsize: "Standard_DS12_v2"
 # Azure location:
 # location: "westus"
+# OpenShift SDN:
+# openshiftsdn: "redhat/openshift-ovs-multitenant"
 # Deploy metrics
 # metrics: true
+# Deploy agregated logging
+# logging: true
+# Deploy agregated logging for ops
+# opslogging: true

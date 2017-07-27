@@ -156,6 +156,13 @@ resources:
           port_range_min: 22
           port_range_max: 22
           remote_ip_prefix: {{ ssh_ingress_cidr }}
+{% if use_bastion|bool %}
+        - direction: ingress
+          protocol: tcp
+          port_range_min: 22
+          port_range_max: 22
+          remote_ip_prefix: {{ bastion_ingress_cidr }}
+{% endif %}
         - direction: ingress
           protocol: icmp
           remote_ip_prefix: {{ ssh_ingress_cidr }}
@@ -432,7 +439,7 @@ resources:
           port_range_min: 53
           port_range_max: 53
           remote_ip_prefix: "{{ openstack_subnet_prefix }}.0/24"
-{% if num_masters is greaterthan 1 %}
+{% if num_masters > 1 %}
   lb-secgrp:
     type: OS::Neutron::SecurityGroup
     properties:
@@ -444,7 +451,7 @@ resources:
         port_range_min: {{ openshift_master_api_port | default(8443) }}
         port_range_max: {{ openshift_master_api_port | default(8443) }}
         remote_ip_prefix: {{ lb_ingress_cidr }}
-  {% if openshift_master_console_port is defined and openshift_master_console_port is not equalto openshift_master_api_port %}
+  {% if openshift_master_console_port is defined and openshift_master_console_port != openshift_master_api_port %}
       - direction: ingress
         protocol: tcp
         port_range_min: {{ openshift_master_console_port | default(8443) }}
@@ -458,7 +465,11 @@ resources:
     properties:
       count: {{ num_etcd }}
       resource_def:
+{% if use_bastion|bool %}
+        type: server_nofloating.yaml
+{% else %}
         type: server.yaml
+{% endif %}
         properties:
           name:
             str_replace:
@@ -483,7 +494,9 @@ resources:
           secgrp:
             - { get_resource: {% if openstack_flat_secgrp|default(False)|bool %}flat-secgrp{% else %}etcd-secgrp{% endif %} }
             - { get_resource: common-secgrp }
+{% if not use_bastion|bool %}
           floating_network: {{ external_network }}
+{% endif %}
           net_name:
             str_replace:
               template: openshift-ansible-cluster_id-net
@@ -493,7 +506,7 @@ resources:
     depends_on:
       - interface
 
-{% if num_masters is greaterthan 1 %}
+{% if num_masters > 1 %}
   loadbalancer:
     type: OS::Heat::ResourceGroup
     properties:
@@ -540,7 +553,11 @@ resources:
     properties:
       count: {{ num_masters }}
       resource_def:
+{% if use_bastion|bool %}
+        type: server_nofloating.yaml
+{% else %}
         type: server.yaml
+{% endif %}
         properties:
           name:
             str_replace:
@@ -568,12 +585,14 @@ resources:
 {% else %}
             - { get_resource: master-secgrp }
             - { get_resource: node-secgrp }
-{% if num_etcd is equalto 0 %}
+{% if num_etcd == 0 %}
             - { get_resource: etcd-secgrp }
 {% endif %}
 {% endif %}
             - { get_resource: common-secgrp }
+{% if not use_bastion|bool %}
           floating_network: {{ external_network }}
+{% endif %}
           net_name:
             str_replace:
               template: openshift-ansible-cluster_id-net
@@ -590,7 +609,11 @@ resources:
       removal_policies:
       - resource_list: {{ nodes_to_remove }}
       resource_def:
+{% if use_bastion|bool %}
+        type: server_nofloating.yaml
+{% else %}
         type: server.yaml
+{% endif %}
         properties:
           name:
             str_replace:
@@ -610,7 +633,9 @@ resources:
           type:        node
           subtype:     app
           node_labels:
-            region: primary
+{% for k, v in openshift_cluster_node_labels.app.iteritems() %}
+            {{ k|e }}: {{ v|e }}
+{% endfor %}
           image:       {{ openstack_image }}
           flavor:      {{ node_flavor }}
           key_name:    {{ ssh_public_key }}
@@ -619,7 +644,9 @@ resources:
           secgrp:
             - { get_resource: {% if openstack_flat_secgrp|default(False)|bool %}flat-secgrp{% else %}node-secgrp{% endif %} }
             - { get_resource: common-secgrp }
+{% if not use_bastion|bool %}
           floating_network: {{ external_network }}
+{% endif %}
           net_name:
             str_replace:
               template: openshift-ansible-cluster_id-net
@@ -654,7 +681,9 @@ resources:
           type:        node
           subtype:     infra
           node_labels:
-            region: infra
+{% for k, v in openshift_cluster_node_labels.infra.iteritems() %}
+            {{ k|e }}: {{ v|e }}
+{% endfor %}
           image:       {{ openstack_image }}
           flavor:      {{ infra_flavor }}
           key_name:    {{ ssh_public_key }}

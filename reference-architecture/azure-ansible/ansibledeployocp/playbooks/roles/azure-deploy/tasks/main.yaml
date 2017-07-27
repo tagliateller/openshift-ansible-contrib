@@ -38,8 +38,14 @@
         value: "{{ aadclientsecret }}"
       rhsmUsernamePasswordOrActivationKey:
         value: "{{ rhsmusernamepasswordoractivationkey }}"
+      OpenShiftSDN:
+        value: "{{ openshiftsdn }}"
       metrics:
         value: "{{ metrics }}"
+      logging:
+        value: "{{ logging }}"
+      opslogging:
+        value: "{{ opslogging }}"
 
   register: azuredeploy
 

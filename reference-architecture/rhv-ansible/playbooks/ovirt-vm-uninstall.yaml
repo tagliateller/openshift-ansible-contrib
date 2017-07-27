@@ -1,14 +1,14 @@
 ---
-- name: oVirt infra
-  hosts: localhost
+- name: oVirt infra destroy
+  hosts: engine
   connection: local
   gather_facts: false
 
   vars_files:
-    - vars/ovirt_infra_vars.yml
+    - vars/ovirt-infra-vars.yaml
 
   pre_tasks:
-    - name: Login to oVirt
+    - name: Log in to oVirt
       ovirt_auth:
         url: "{{ engine_url }}"
         username: "{{ engine_user }}"
@@ -18,8 +18,14 @@
       tags:
         - always
 
-  roles:
-    - ovirt-infra
+  tasks:
+    - name: Erase vms
+      ovirt_vms:
+        auth: "{{ ovirt_auth }}"
+        state: absent
+        name: "{{ item.name }}"
+      with_items:
+        - "{{ vms }}"
 
   post_tasks:
     - name: Logout from oVirt
