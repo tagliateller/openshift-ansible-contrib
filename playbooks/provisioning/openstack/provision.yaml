@@ -1,4 +1,4 @@
 ---
-- include: "provision-openstack.yml"
+- include: "prerequisites.yml"
 
-- include: "pre-install.yml"
+- include: "provision-openstack.yml"

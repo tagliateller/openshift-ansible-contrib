@@ -274,11 +274,36 @@
         "description" : "Azure AD Client Secret"
       }
     },
+    "OpenShiftSDN" : {
+      "type" : "string",
+      "defaultValue" : "redhat/openshift-ovs-multitenant",
+      "allowedValues" : [
+        "redhat/openshift-ovs-subnet",
+        "redhat/openshift-ovs-multitenant"
+      ],
+      "metadata" : {
+        "description" : "The supported SDN plugin to be used in OCP."
+      }
+    },
     "metrics" : {
       "type": "bool",
       "defaultValue": true,
       "metadata" :{
         "description" : "Enable OCP metrics"
+      }
+    },
+    "logging" : {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata" :{
+        "description" : "Enable OCP aggregated logging"
+      }
+    },
+    "opslogging" : {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata" :{
+        "description" : "Enable OCP aggregated logging for ops"
       }
     }
   },
@@ -489,7 +514,6 @@
     "masterLbBackendPoolId" : "[concat(variables('masterLbId'),'/backendAddressPools/loadBalancerBackend')]",
     "masterLbHttpProbeId" : "[concat(variables('masterLbId'),'/probes/httpProbe')]",
     "masterLb8443ProbeId" : "[concat(variables('masterLbId'),'/probes/8443Probe')]",
-    "masterLbCockpitProbeId" : "[concat(variables('masterLbId'),'/probes/cockpitProbe')]",
     "infraLoadBalancerName" : "[concat(parameters('WildcardZone'), 'lb')]",
     "infraPublicIpAddressId" : "[resourceId('Microsoft.Network/publicIPAddresses', parameters('WildcardZone'))]",
     "infraLbId" : "[resourceId('Microsoft.Network/loadBalancers', variables('infraLoadBalancerName'))]",
@@ -498,12 +522,11 @@
     "infraLbHttpProbeId" : "[concat(variables('infraLbId'),'/probes/httpProbe')]",
     "infraLbHttpsProbeId" : "[concat(variables('infraLbId'),'/probes/httpsProbe')]",
     "infraLbCockpitProbeId" : "[concat(variables('infraLbId'),'/probes/cockpitProbe')]",
-    "persistentVolume1Type" : "Standard_LRS",
-    "newStorageAccountPersistentVolume1" : "[concat('sapv1', resourceGroup().name)]",
-    "newStorageAccountPersistentVolume2" : "[concat('sapv2', resourceGroup().name)]",
+    "StorageAccountPersistentVolume" : "[concat('sapv', resourceGroup().name)]",
+    "StorageAccountLoggingMetricsVolumes" : "[concat('sapvlm', resourceGroup().name)]",
     "registryStorageName" : "[concat('sareg', resourceGroup().name)]",
     "subscriptionId" : "[subscription().subscriptionId]",
-    "persistentVolume2Type" : "Standard_LRS",
+    "StorageAccountLoggingMetricsVolumesVolumeType" : "Premium_LRS",
     "apiVersion" : "2015-06-15",
     "apiVersionCompute" : "2015-06-15",
     "apiVersionNetwork" : "2016-03-30",
@@ -724,8 +747,17 @@
           "rhsmmode" : {
             "value" : "[parameters('rhsmUsernamePasswordOrActivationKey')]"
           },
+          "openshiftsdn": {
+            "value" : "[parameters('OpenShiftSDN')]"
+          },
           "metrics" : {
             "value" : "[parameters('metrics')]"
+          },
+          "logging" : {
+            "value" : "[parameters('logging')]"
+          },
+          "opslogging" : {
+            "value" : "[parameters('opslogging')]"
           }
         }
       }
@@ -763,32 +795,14 @@
           "adminUsername" : {
             "value" : "[parameters('adminUsername')]"
           },
-          "adminPassword" : {
-            "value" : "[parameters('adminPassword')]"
-          },
           "sshKeyData" : {
             "value" : "[parameters('sshKeyData')]"
-          },
-          "numberOfNodes" : {
-            "value" : "[parameters('numberOfNodes')]"
           },
           "baseTemplateUrl" : {
             "value" : "[variables('baseTemplateUrl')]"
           },
-          "routerExtIP" : {
-            "value" : "[reference(parameters('WildcardZone')).ipAddress]"
-          },
           "imageReference" : {
             "value" : "[variables(parameters('image'))]"
-          },
-          "RHNUserName" : {
-            "value" : "[parameters('RHNUserName')]"
-          },
-          "RHNPassword" : {
-            "value" : "[parameters('RHNPassword')]"
-          },
-          "SubscriptionPoolId" : {
-            "value" : "[parameters('SubscriptionPoolId')]"
           },
           "sshPrivateData" : {
             "value" : "[parameters('sshPrivateData')]"
@@ -835,32 +849,14 @@
           "adminUsername" : {
             "value" : "[parameters('adminUsername')]"
           },
-          "adminPassword" : {
-            "value" : "[parameters('adminPassword')]"
-          },
           "sshKeyData" : {
             "value" : "[parameters('sshKeyData')]"
-          },
-          "numberOfNodes" : {
-            "value" : "[parameters('numberOfNodes')]"
           },
           "baseTemplateUrl" : {
             "value" : "[variables('baseTemplateUrl')]"
           },
-          "routerExtIP" : {
-            "value" : "[reference(parameters('WildcardZone')).ipAddress]"
-          },
           "imageReference" : {
             "value" : "[variables(parameters('image'))]"
-          },
-          "RHNUserName" : {
-            "value" : "[parameters('RHNUserName')]"
-          },
-          "RHNPassword" : {
-            "value" : "[parameters('RHNPassword')]"
-          },
-          "SubscriptionPoolId" : {
-            "value" : "[parameters('SubscriptionPoolId')]"
           },
           "sshPrivateData" : {
             "value" : "[parameters('sshPrivateData')]"
@@ -907,32 +903,14 @@
           "adminUsername" : {
             "value" : "[parameters('adminUsername')]"
           },
-          "adminPassword" : {
-            "value" : "[parameters('adminPassword')]"
-          },
           "sshKeyData" : {
             "value" : "[parameters('sshKeyData')]"
-          },
-          "numberOfNodes" : {
-            "value" : "[parameters('numberOfNodes')]"
           },
           "baseTemplateUrl" : {
             "value" : "[variables('baseTemplateUrl')]"
           },
-          "routerExtIP" : {
-            "value" : "[reference(parameters('WildcardZone')).ipAddress]"
-          },
           "imageReference" : {
             "value" : "[variables(parameters('image'))]"
-          },
-          "RHNUserName" : {
-            "value" : "[parameters('RHNUserName')]"
-          },
-          "RHNPassword" : {
-            "value" : "[parameters('RHNPassword')]"
-          },
-          "SubscriptionPoolId" : {
-            "value" : "[parameters('SubscriptionPoolId')]"
           },
           "sshPrivateData" : {
             "value" : "[parameters('sshPrivateData')]"
@@ -992,7 +970,7 @@
             "value" : "[variables('infraLoadBalancerName')]"
           },
           "availabilitySet" : {
-            "value" : "['infraavailabilityset']"
+            "value" : "['infranodeavailabilityset']"
           }
         }
       }
@@ -1043,7 +1021,7 @@
             "value" : "[variables('infraLoadBalancerName')]"
           },
           "availabilitySet" : {
-            "value" : "['infraavailabilityset']"
+            "value" : "['infranodeavailabilityset']"
           }
         }
       }
@@ -1094,7 +1072,7 @@
             "value" : "[variables('infraLoadBalancerName')]"
           },
           "availabilitySet" : {
-            "value" : "['infraavailabilityset']"
+            "value" : "['infranodeavailabilityset']"
           }
         }
       }
@@ -1113,11 +1091,11 @@
     },
     {
       "type" : "Microsoft.Storage/storageAccounts",
-      "name" : "[variables('newStorageAccountPersistentVolume1')]",
+      "name" : "[variables('StorageAccountPersistentVolume')]",
       "apiVersion" : "[variables('apiVersion')]",
       "location" : "[variables('location')]",
       "tags" : {
-        "displayName" : "PersistentVolume1StorageAccount"
+        "displayName" : "StorageAccountPersistentVolume"
       },
       "properties" : {
         "accountType" : "[variables('vmSizesMap')[parameters('nodeVmSize')].storageAccountType]"
@@ -1125,14 +1103,14 @@
     },
     {
       "type" : "Microsoft.Storage/storageAccounts",
-      "name" : "[variables('newStorageAccountPersistentVolume2')]",
+      "name" : "[variables('StorageAccountLoggingMetricsVolumes')]",
       "apiVersion" : "[variables('apiVersion')]",
       "location" : "[variables('location')]",
       "tags" : {
-        "displayName" : "PersistentVolume2StorageAccount"
+        "displayName" : "StorageAccountLoggingMetricsVolumes"
       },
       "properties" : {
-        "accountType" : "[variables('persistentVolume2Type')]"
+        "accountType" : "[variables('StorageAccountLoggingMetricsVolumesVolumeType')]"
       }
     },
     {
@@ -1144,7 +1122,7 @@
     },
     {
       "type" : "Microsoft.Compute/availabilitySets",
-      "name" : "infraavailabilityset",
+      "name" : "infranodeavailabilityset",
       "location" : "[variables('location')]",
       "apiVersion" : "[variables('apiVersionCompute')]",
       "properties" : {}
