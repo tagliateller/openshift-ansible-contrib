@@ -14,7 +14,7 @@ rhsm_password: 'xxx'
 rhsm_pool: 'yyy'
 
 # Path to a RHEL image on local machine, downloaded from Red Hat Customer Portal
-rhel_image_path: '~/Downloads/rhel-guest-image-7.3-35.x86_64.qcow2'
+rhel_image_path: '~/Downloads/rhel-server-7.4-x86_64-kvm.qcow2'
 # Choose to delete or retain the clean image during teardown
 delete_image: false
 # Choose to delete or retain the gold image during teardown
@@ -46,6 +46,7 @@ node_instance_group_size: 2
 # Machine types
 bastion_machine_type: g1-small
 master_machine_type: n1-standard-2
+infra_machine_type: n1-standard-2
 node_machine_type: n1-standard-2
 
 # OpenShift deployment type
@@ -81,6 +82,10 @@ openshift_master_identity_providers:
 # Disk sizes in GB
 bastion_disk_size: 20
 master_boot_disk_size: 35
+master_docker_disk_size: 25
+infra_boot_disk_size: 25
+infra_docker_disk_size: 25
+infra_openshift_disk_size: 50
 node_boot_disk_size: 25
 node_docker_disk_size: 25
 node_openshift_disk_size: 50
