@@ -28,9 +28,9 @@ export OPENSHIFTSDN=${array[22]}
 export METRICS=${array[23]}
 export LOGGING=${array[24]}
 export OPSLOGGING=${array[25]}
-export EMAILUSERNAME=${26}
-export EMAILPASSWORD=${27}
-export EMAILNOTIFY=${28}
+export EMAILUSERNAME=${25}
+export EMAILPASSWORD=${26}
+export EMAILNOTIFY=${27}
 export FULLDOMAIN=${THEHOSTNAME#*.*}
 export WILDCARDFQDN=${WILDCARDZONE}.${FULLDOMAIN}
 export WILDCARDIP=`dig +short ${WILDCARDFQDN}`
@@ -55,6 +55,12 @@ echo $SUBSCRIPTIONID
 echo $TENANTID
 echo $AADCLIENTID
 echo $AADCLIENTSECRET
+
+echo 'Show Params'
+echo $OPENSHIFTSDN
+echo $METRICS
+echo $LOGGING
+echo $OPSLOGGING
 
 echo 'Show E-Mail Info'
 echo $EMAILUSERNAME
