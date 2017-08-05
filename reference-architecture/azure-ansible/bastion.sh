@@ -28,6 +28,9 @@ export OPENSHIFTSDN=${array[22]}
 export METRICS=${array[23]}
 export LOGGING=${array[24]}
 export OPSLOGGING=${array[25]}
+export EMAILUSERNAME=${26}
+export EMAILPASSWORD=${27}
+export EMAILNOTIFY=${28}
 export FULLDOMAIN=${THEHOSTNAME#*.*}
 export WILDCARDFQDN=${WILDCARDZONE}.${FULLDOMAIN}
 export WILDCARDIP=`dig +short ${WILDCARDFQDN}`
@@ -52,6 +55,11 @@ echo $SUBSCRIPTIONID
 echo $TENANTID
 echo $AADCLIENTID
 echo $AADCLIENTSECRET
+
+echo 'Show E-Mail Info'
+echo $EMAILUSERNAME
+echo $EMAILPASSWORD
+echo $EMAILNOTIFY
 
 domain=$(grep search /etc/resolv.conf | awk '{print $2}')
 
@@ -107,8 +115,8 @@ chmod 600 /root/.ssh/authorized_keys
 
 sleep 30
 cat <<EOF > /root/setup_ssmtp.sh
-# \$1 = Gmail Account (Leave off @gmail.com ie user)
-# \$2 = Gmail Password
+# \$1 = Custom Account (komplette E-Mail-Adresse)
+# \$2 = Custom Account Password
 # \$3 = Notification email address
 # Setup ssmtp mta agent for use with gmail
 yum -y install wget
@@ -121,24 +129,24 @@ cat <<EOFZ > /etc/ssmtp/ssmtp.conf
 root=${1}
 mailhub=mail
 TLS_CA_File=/etc/pki/tls/certs/ca-bundle.crt
-mailhub=smtp.gmail.com:587   # SMTP server for Gmail
+mailhub=smtp.1und1.de:587   # SMTP server for Custom Account
 Hostname=localhost
 UseTLS=YES
 UseSTARTTLS=Yes
 FromLineOverride=YES #TO CHANGE FROM EMAIL
 Root=\${3} # Redirect root email
-AuthUser=\${1}@gmail.com
+AuthUser=\${1}
 AuthPass=\${2}
 AuthMethod=LOGIN
 rewriteDomain=azure.com
 EOFZ
 cat <<EOFZ > /etc/ssmtp/revaliases
-root:\${1}@gmail.com:smtp.gmail.com:587
+root:\${1}:smtp.1und1.de:587
 EOFZ
 EOF
 chmod +x /root/setup_ssmtp.sh
 # Continue even if ssmtp.sh script errors out
-/root/setup_ssmtp.sh ${AUSERNAME} ${PASSWORD} ${RHNUSERNAME} || true
+/root/setup_ssmtp.sh ${EMAILUSERNAME} ${EMAILPASSWORD} ${EMAILNOTIFY} || true
 
 sleep 30
 echo "${RESOURCEGROUP} Bastion Host is starting software update" | mail -s "${RESOURCEGROUP} Bastion Software Install" ${RHNUSERNAME} || true

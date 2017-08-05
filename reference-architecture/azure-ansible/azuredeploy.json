@@ -305,10 +305,31 @@
       "metadata" :{
         "description" : "Enable OCP aggregated logging for ops"
       }
+    },
+    "emailUsername" : {
+      "type": "string",
+      "defaultValue": "foo@bar.me",
+      "metadata" :{
+        "description" : "E-Mail Account for Notify"
+      }
+    },
+    "emailPassword" : {
+      "type": "string",
+      "defaultValue": "Pass!Word",
+      "metadata" :{
+        "description" : "Password for E-Mail Account for Notify"
+      }
+    },
+    "emailNotifyAddress" : {
+      "type": "bool",
+      "defaultValue": "notify@bar.me",
+      "metadata" :{
+        "description" : "Notify E-Mail Adress"
+      }
     }
   },
   "variables" : {
-    "gituser" : "openshift",
+    "gituser" : "taglitateller",
     "branch" : "master",
     "baseTemplateUrl" : "[concat('https://raw.githubusercontent.com/',variables('gituser'),'/openshift-ansible-contrib/',variables('branch'),'/reference-architecture/azure-ansible/')]",
     "baseVMachineTemplateUriInfranode" : "[concat(variables('baseTemplateUrl'), 'infranode.json')]",
@@ -758,6 +779,15 @@
           },
           "opslogging" : {
             "value" : "[parameters('opslogging')]"
+          },
+          "emailUsername" : {
+            "value" : "[parameters('emailUsername')]"
+          },
+          "emailPassword" : {
+            "value" : "[parameters('emailPassword')]"
+          },
+          "emailNotifyAddress" : {
+            "value" : "[parameters('emailNotifyAddress')]"
           }
         }
       }
