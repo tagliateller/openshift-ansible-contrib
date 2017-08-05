@@ -130,7 +130,7 @@ wget -c https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm
 rpm -ivh epel-release-latest-7.noarch.rpm
 yum -y install ssmtp
 alternatives --set mta  /usr/sbin/sendmail.ssmtp
-mkdir /etc/ssmtp
+mkdir -p /etc/ssmtp
 cat <<EOFZ > /etc/ssmtp/ssmtp.conf
 root=${1}
 mailhub=mail
@@ -155,7 +155,7 @@ chmod +x /root/setup_ssmtp.sh
 /root/setup_ssmtp.sh ${EMAILUSERNAME} ${EMAILPASSWORD} ${EMAILNOTIFY} || true
 
 sleep 30
-echo "${RESOURCEGROUP} Bastion Host is starting software update" | mail -s "${RESOURCEGROUP} Bastion Software Install" ${RHNUSERNAME} || true
+echo "${RESOURCEGROUP} Bastion Host is starting software update" | mail -s "${RESOURCEGROUP} Bastion Software Install" ${EMAILNOTIFY} || true
 # Continue Setting Up Bastion
 subscription-manager unregister
 yum -y remove RHEL7
@@ -469,7 +469,7 @@ sleep 120
 ansible all --module-name=ping > ansible-preinstall-ping.out || true
 ansible-playbook  /home/${AUSERNAME}/subscribe.yml
 ansible-playbook  /home/${AUSERNAME}/azure-config.yml
-echo "${RESOURCEGROUP} Bastion Host is starting ansible BYO" | mail -s "${RESOURCEGROUP} Bastion BYO Install" ${RHNUSERNAME} || true
+echo "${RESOURCEGROUP} Bastion Host is starting ansible BYO" | mail -s "${RESOURCEGROUP} Bastion BYO Install" ${EMAILNOTIFY} || true
 ansible-playbook  /usr/share/ansible/openshift-ansible/playbooks/byo/config.yml < /dev/null
 
 wget http://master1:8443/api > healtcheck.out
@@ -503,7 +503,7 @@ ansible master1 -b -m fetch -a "src=/etc/origin/master/ca.serial.txt dest=/tmp/c
 ansible masters -b -m copy -a "src=/tmp/ca.serial.txt dest=/etc/origin/master/ca.serial.txt mode=644 owner=root"
 curl https://raw.githubusercontent.com/openshift/openshift-ansible-contrib/master/reference-architecture/azure-ansible/add_host.sh -o add_host.sh -s
 chmod a+x ./add_host.sh
-cat /home/${AUSERNAME}/openshift-install.out | tr -cd [:print:] |  mail -s "${RESOURCEGROUP} Install Complete" ${RHNUSERNAME} || true
+cat /home/${AUSERNAME}/openshift-install.out | tr -cd [:print:] |  mail -s "${RESOURCEGROUP} Install Complete" ${EMAILNOTIFY} || true
 touch /root/.openshiftcomplete
 touch /home/${AUSERNAME}/.openshiftcomplete
 EOF
@@ -639,7 +639,7 @@ EOF
 
 cd /home/${AUSERNAME}
 chmod 755 /home/${AUSERNAME}/openshift-install.sh
-echo "${RESOURCEGROUP} Bastion Host is starting OpenShift Install" | mail -s "${RESOURCEGROUP} Bastion OpenShift Install Starting" ${RHNUSERNAME} || true
+echo "${RESOURCEGROUP} Bastion Host is starting OpenShift Install" | mail -s "${RESOURCEGROUP} Bastion OpenShift Install Starting" ${EMAILNOTIFY} || true
 /home/${AUSERNAME}/openshift-install.sh &> /home/${AUSERNAME}/openshift-install.out &
 chmod 755 /home/${AUSERNAME}/openshift-postinstall.sh
 /home/${AUSERNAME}/openshift-postinstall.sh &> /home/${AUSERNAME}/openshift-postinstall.out &
