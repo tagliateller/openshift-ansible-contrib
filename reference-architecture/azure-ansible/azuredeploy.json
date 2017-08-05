@@ -329,7 +329,7 @@
     }
   },
   "variables" : {
-    "gituser" : "taglitateller",
+    "gituser" : "tagliateller",
     "branch" : "master",
     "baseTemplateUrl" : "[concat('https://raw.githubusercontent.com/',variables('gituser'),'/openshift-ansible-contrib/',variables('branch'),'/reference-architecture/azure-ansible/')]",
     "baseVMachineTemplateUriInfranode" : "[concat(variables('baseTemplateUrl'), 'infranode.json')]",
