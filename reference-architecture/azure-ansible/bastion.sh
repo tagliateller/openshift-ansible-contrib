@@ -503,7 +503,7 @@ ansible master1 -b -m fetch -a "src=/etc/origin/master/ca.serial.txt dest=/tmp/c
 ansible masters -b -m copy -a "src=/tmp/ca.serial.txt dest=/etc/origin/master/ca.serial.txt mode=644 owner=root"
 curl https://raw.githubusercontent.com/tagliateller/openshift-ansible-contrib/master/reference-architecture/azure-ansible/add_host.sh -o /home/${AUSERNAME}/add_host.sh -s
 chmod a+x /home/${AUSERNAME}/add_host.sh
-cat /home/${AUSERNAME}/openshift-install.out | tr -cd [:print:] |  mail -s "${RESOURCEGROUP} Install Complete" ${RHNUSERNAME} || true
+cat /home/${AUSERNAME}/openshift-install.out | tr -cd [:print:] |  mail -s "${RESOURCEGROUP} Install Complete" ${EMAILNOTIFY} || true
 touch /root/.openshiftcomplete
 touch /home/${AUSERNAME}/.openshiftcomplete
 EOF
