@@ -24,15 +24,11 @@ export TENANTID=${array[18]}
 export AADCLIENTID=${array[19]}
 export AADCLIENTSECRET=${array[20]}
 export RHSMMODE=${array[21]}
-export OPENSHIFTSDN=${array[22]}
-export METRICS=${array[23]}
-export LOGGING=${array[24]}
-export OPSLOGGING=${array[25]}
-export EMAILUSERNAME=${25}
-export EMAILPASSWORD=${26}
-export EMAILNOTIFY=${27}
+export METRICS=${array[22]}
+export LOGGING=${array[23]}
+export OPSLOGGING=${array[24]}
 export FULLDOMAIN=${THEHOSTNAME#*.*}
-export WILDCARDFQDN=${WILDCARDZONE}.${FULLDOMAIN}
+export WILDCARDFQDN=${RESOURCEGROUP}.${FULLDOMAIN}
 export WILDCARDIP=`dig +short ${WILDCARDFQDN}`
 export WILDCARDNIP=${WILDCARDIP}.nip.io
 export LOGGING_ES_INSTANCES="3"
@@ -56,23 +52,30 @@ echo $TENANTID
 echo $AADCLIENTID
 echo $AADCLIENTSECRET
 
-echo 'Show Params'
-echo $OPENSHIFTSDN
-echo $METRICS
-echo $LOGGING
-echo $OPSLOGGING
-
-echo 'Show E-Mail Info'
-echo $EMAILUSERNAME
-echo $EMAILPASSWORD
-echo $EMAILNOTIFY
-
 domain=$(grep search /etc/resolv.conf | awk '{print $2}')
 
-ps -ef | grep bastion.sh > cmdline.out
+ps -ef | grep allinone.sh > cmdline.out
 
 systemctl enable dnsmasq.service
 systemctl start dnsmasq.service
+
+mkdir -p /var/lib/origin/openshift.local.volumes
+ZEROVG=$( parted -m /dev/sda print all 2>/dev/null | grep unknown | grep /dev/sd | cut -d':' -f1 | head -n1)
+parted -s -a optimal ${ZEROVG} mklabel gpt -- mkpart primary xfs 1 -1
+sleep 5
+mkfs.xfs -f ${ZEROVG}1
+echo "${ZEROVG}1  /var/lib/origin/openshift.local.volumes xfs  defaults,gquota  0  0" >> /etc/fstab
+mount ${ZEROVG}1
+
+DOCKERVG=$( parted -m /dev/sda print all 2>/dev/null | grep unknown | grep /dev/sd | cut -d':' -f1 | head -n1 )
+
+echo "DEVS=${DOCKERVG}" >> /etc/sysconfig/docker-storage-setup
+cat <<EOF > /etc/sysconfig/docker-storage-setup
+DEVS=$DOCKERVG
+VG=docker-vg
+DATA_SIZE=95%VG
+EXTRA_DOCKER_STORAGE_OPTIONS="--storage-opt dm.basesize=3G"
+EOF
 
 mkdir -p /home/$AUSERNAME/.azuresettings
 echo $REGISTRYSTORAGENAME > /home/$AUSERNAME/.azuresettings/registry_storage_name
@@ -121,8 +124,8 @@ chmod 600 /root/.ssh/authorized_keys
 
 sleep 30
 cat <<EOF > /root/setup_ssmtp.sh
-# \$1 = Custom Account (komplette E-Mail-Adresse)
-# \$2 = Custom Account Password
+# \$1 = Gmail Account (Leave off @gmail.com ie user)
+# \$2 = Gmail Password
 # \$3 = Notification email address
 # Setup ssmtp mta agent for use with gmail
 yum -y install wget
@@ -130,33 +133,33 @@ wget -c https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm
 rpm -ivh epel-release-latest-7.noarch.rpm
 yum -y install ssmtp
 alternatives --set mta  /usr/sbin/sendmail.ssmtp
-mkdir -p /etc/ssmtp
+mkdir /etc/ssmtp
 cat <<EOFZ > /etc/ssmtp/ssmtp.conf
 root=${1}
 mailhub=mail
 TLS_CA_File=/etc/pki/tls/certs/ca-bundle.crt
-mailhub=smtp.1und1.de:587   # SMTP server for Custom Account
+mailhub=smtp.gmail.com:587   # SMTP server for Gmail
 Hostname=localhost
 UseTLS=YES
 UseSTARTTLS=Yes
 FromLineOverride=YES #TO CHANGE FROM EMAIL
 Root=\${3} # Redirect root email
-AuthUser=\${1}
+AuthUser=\${1}@gmail.com
 AuthPass=\${2}
 AuthMethod=LOGIN
 rewriteDomain=azure.com
 EOFZ
 cat <<EOFZ > /etc/ssmtp/revaliases
-root:\${1}:smtp.1und1.de:587
+root:\${1}@gmail.com:smtp.gmail.com:587
 EOFZ
 EOF
 chmod +x /root/setup_ssmtp.sh
 # Continue even if ssmtp.sh script errors out
-/root/setup_ssmtp.sh ${EMAILUSERNAME} ${EMAILPASSWORD} ${EMAILNOTIFY} || true
+/root/setup_ssmtp.sh ${AUSERNAME} ${PASSWORD} ${RHNUSERNAME} || true
 
 sleep 30
-echo "${RESOURCEGROUP} Bastion Host is starting software update" | mail -s "${RESOURCEGROUP} Bastion Software Install" ${EMAILNOTIFY} || true
-# Continue Setting Up Bastion
+echo "${RESOURCEGROUP} Host is starting software update" | mail -s "${RESOURCEGROUP} Software Install" ${RHNUSERNAME} || true
+# Continue Setting Up Host
 subscription-manager unregister
 yum -y remove RHEL7
 rm -f /etc/yum.repos.d/rh-cloud.repo
@@ -175,7 +178,6 @@ subscription-manager repos --disable="*"
 subscription-manager repos --enable="rhel-7-server-rpms" --enable="rhel-7-server-extras-rpms" --enable="rhel-7-fast-datapath-rpms"
 subscription-manager repos --enable="rhel-7-server-ose-3.5-rpms"
 yum -y install atomic-openshift-utils git net-tools bind-utils iptables-services bridge-utils bash-completion httpd-tools nodejs qemu-img
-yum -y install --enablerepo="epel" jq
 touch /root/.updateok
 
 # Create azure.conf file
@@ -250,11 +252,12 @@ docker_udev_workaround=True
 openshift_node_debug_level="{{ node_debug_level | default(debug_level, true) }}"
 openshift_master_debug_level="{{ master_debug_level | default(debug_level, true) }}"
 openshift_master_access_token_max_seconds=2419200
-openshift_hosted_router_replicas=3
-openshift_hosted_registry_replicas=3
+openshift_hosted_router_replicas=1
+openshift_hosted_registry_replicas=1
 openshift_master_api_port="{{ console_port }}"
 openshift_master_console_port="{{ console_port }}"
 openshift_override_hostname_check=true
+os_sdn_network_plugin_name='redhat/openshift-ovs-multitenant'
 osm_use_cockpit=false
 openshift_release=v3.5
 openshift_cloudprovider_kind=azure
@@ -266,11 +269,9 @@ deployment_type=openshift-enterprise
 openshift_master_identity_providers=[{'name': 'htpasswd_auth', 'login': 'true', 'challenge': 'true', 'kind': 'HTPasswdPasswordIdentityProvider', 'filename': '/etc/origin/master/htpasswd'}]
 openshift_master_manage_htpasswd=false
 
-os_sdn_network_plugin_name=${OPENSHIFTSDN}
-
 # default selectors for router and registry services
-openshift_router_selector='role=infra'
-openshift_registry_selector='role=infra'
+openshift_router_selector='role=app'
+openshift_registry_selector='role=app'
 
 # Select default nodes for projects
 osm_default_node_selector="role=app"
@@ -294,9 +295,9 @@ openshift_metrics_install_metrics=false
 openshift_metrics_cassandra_storage_type=pv
 openshift_metrics_cassandra_pvc_size="${METRICS_CASSANDRASIZE}G"
 openshift_metrics_cassandra_replicas="${METRICS_INSTANCES}"
-openshift_metrics_hawkular_nodeselector={"role":"infra"}
-openshift_metrics_cassandra_nodeselector={"role":"infra"}
-openshift_metrics_heapster_nodeselector={"role":"infra"}
+openshift_metrics_hawkular_nodeselector={"role":"app"}
+openshift_metrics_cassandra_nodeselector={"role":"app"}
+openshift_metrics_heapster_nodeselector={"role":"app"}
 
 # Do not install logging but post install
 openshift_logging_install_logging=false
@@ -305,49 +306,31 @@ openshift_logging_es_pvc_dynamic="false"
 openshift_logging_es_pvc_size="${LOGGING_ES_SIZE}G"
 openshift_logging_es_cluster_size=${LOGGING_ES_INSTANCES}
 openshift_logging_fluentd_nodeselector={"logging":"true"}
-openshift_logging_es_nodeselector={"role":"infra"}
-openshift_logging_kibana_nodeselector={"role":"infra"}
-openshift_logging_curator_nodeselector={"role":"infra"}
+openshift_logging_es_nodeselector={"role":"app"}
+openshift_logging_kibana_nodeselector={"role":"app"}
+openshift_logging_curator_nodeselector={"role":"app"}
 
 openshift_logging_use_ops=false
 openshift_logging_es_ops_pv_selector={"usage":"opselasticsearch"}
 openshift_logging_es_ops_pvc_dynamic="false"
 openshift_logging_es_ops_pvc_size="${OPSLOGGING_ES_SIZE}G"
 openshift_logging_es_ops_cluster_size=${OPSLOGGING_ES_INSTANCES}
-openshift_logging_es_ops_nodeselector={"role":"infra"}
-openshift_logging_kibana_ops_nodeselector={"role":"infra"}
-openshift_logging_curator_ops_nodeselector={"role":"infra"}
+openshift_logging_es_ops_nodeselector={"role":"app"}
+openshift_logging_kibana_ops_nodeselector={"role":"app"}
+openshift_logging_curator_ops_nodeselector={"role":"app"}
 
 [masters]
-master1 openshift_hostname=master1 openshift_node_labels="{'role': 'master'}"
-master2 openshift_hostname=master2 openshift_node_labels="{'role': 'master'}"
-master3 openshift_hostname=master3 openshift_node_labels="{'role': 'master'}"
+${RESOURCEGROUP} openshift_hostname=${RESOURCEGROUP} 
 
 [etcd]
-master1
-master2
-master3
+${RESOURCEGROUP}
 
 [new_nodes]
 [new_masters]
 
 [nodes]
-master1 openshift_hostname=master1 openshift_node_labels="{'role':'master','zone':'default','logging':'true'}" openshift_schedulable=false
-master2 openshift_hostname=master2 openshift_node_labels="{'role':'master','zone':'default','logging':'true'}" openshift_schedulable=false
-master3 openshift_hostname=master3 openshift_node_labels="{'role':'master','zone':'default','logging':'true'}" openshift_schedulable=false
-infranode1 openshift_hostname=infranode1 openshift_node_labels="{'role': 'infra', 'zone': 'default','logging':'true'}"
-infranode2 openshift_hostname=infranode2 openshift_node_labels="{'role': 'infra', 'zone': 'default','logging':'true'}"
-infranode3 openshift_hostname=infranode3 openshift_node_labels="{'role': 'infra', 'zone': 'default','logging':'true'}"
+${RESOURCEGROUP} openshift_hostname=${RESOURCEGROUP} openshift_node_labels="{'role':'app','zone':'default','logging':'true'}" openshift_schedulable=true
 EOF
-
-# Loop to add Nodes
-for (( c=01; c<$NODECOUNT+1; c++ ))
-do
-  pnum=$(printf "%02d" $c)
-  echo "node${pnum} openshift_hostname=node${pnum} \
-openshift_node_labels=\"{'role':'app','zone':'default','logging':'true'}\"" >> /etc/ansible/hosts
-done
-
 
 cat <<EOF > /home/${AUSERNAME}/subscribe.yml
 ---
@@ -413,9 +396,11 @@ cat <<EOF >> /home/${AUSERNAME}/subscribe.yml
   - name: Install the OCP client
     yum: name=atomic-openshift-clients state=latest
   - name: Update all hosts
-    yum: name="*" state=latest
+    command: yum -y update
+    async: 1200
+    poll: 10
   - name: Wait for Things to Settle
-    pause: minutes=2
+    pause:  minutes=5
 EOF
 
 cat <<EOF > /home/${AUSERNAME}/postinstall.yml
@@ -469,10 +454,10 @@ sleep 120
 ansible all --module-name=ping > ansible-preinstall-ping.out || true
 ansible-playbook  /home/${AUSERNAME}/subscribe.yml
 ansible-playbook  /home/${AUSERNAME}/azure-config.yml
-echo "${RESOURCEGROUP} Bastion Host is starting ansible BYO" | mail -s "${RESOURCEGROUP} Bastion BYO Install" ${EMAILNOTIFY} || true
+echo "${RESOURCEGROUP} Host is starting ansible BYO" | mail -s "${RESOURCEGROUP} Host starting BYO Install" ${RHNUSERNAME} || true
 ansible-playbook  /usr/share/ansible/openshift-ansible/playbooks/byo/config.yml < /dev/null
 
-wget http://master1:8443/api > healtcheck.out
+wget http://${RESOURCEGROUP}:8443/api > healtcheck.out
 
 ansible all -b -m command -a "nmcli con modify eth0 ipv4.dns-search $(domainname -d)"
 ansible all -b -m service -a "name=NetworkManager state=restarted"
@@ -480,7 +465,7 @@ ansible all -b -m service -a "name=NetworkManager state=restarted"
 ansible-playbook /home/${AUSERNAME}/postinstall.yml
 cd /root
 mkdir .kube
-scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${AUSERNAME}@master1:~/.kube/config /tmp/kube-config
+scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${AUSERNAME}@${RESOURCEGROUP}:~/.kube/config /tmp/kube-config
 cp /tmp/kube-config /root/.kube/config
 mkdir /home/${AUSERNAME}/.kube
 cp /tmp/kube-config /home/${AUSERNAME}/.kube/config
@@ -489,7 +474,7 @@ rm -f /tmp/kube-config
 yum -y install atomic-openshift-clients
 echo "setup registry for azure"
 oc env dc docker-registry -e REGISTRY_STORAGE=azure -e REGISTRY_STORAGE_AZURE_ACCOUNTNAME=$REGISTRYSTORAGENAME -e REGISTRY_STORAGE_AZURE_ACCOUNTKEY=$REGISTRYKEY -e REGISTRY_STORAGE_AZURE_CONTAINER=registry
-oc patch dc registry-console -p '{"spec":{"template":{"spec":{"nodeSelector":{"role":"infra"}}}}}'
+oc patch dc registry-console -p '{"spec":{"template":{"spec":{"nodeSelector":{"role":"app"}}}}}'
 sleep 30
 echo "Setup Azure PV"
 /home/${AUSERNAME}/create_azure_storage_container.sh sapv${RESOURCEGROUP} "vhds"
@@ -498,11 +483,6 @@ echo "Setup Azure PV for metrics & logging"
 /home/${AUSERNAME}/create_azure_storage_container.sh sapvlm${RESOURCEGROUP} "loggingmetricspv"
 
 oc adm policy add-cluster-role-to-user cluster-admin ${AUSERNAME}
-# Workaround for BZ1469358
-ansible master1 -b -m fetch -a "src=/etc/origin/master/ca.serial.txt dest=/tmp/ca.serial.txt flat=true"
-ansible masters -b -m copy -a "src=/tmp/ca.serial.txt dest=/etc/origin/master/ca.serial.txt mode=644 owner=root"
-curl https://raw.githubusercontent.com/tagliateller/openshift-ansible-contrib/master/reference-architecture/azure-ansible/add_host.sh -o /home/${AUSERNAME}/add_host.sh -s
-chmod a+x /home/${AUSERNAME}/add_host.sh
 cat /home/${AUSERNAME}/openshift-install.out | tr -cd [:print:] |  mail -s "${RESOURCEGROUP} Install Complete" ${RHNUSERNAME} || true
 touch /root/.openshiftcomplete
 touch /home/${AUSERNAME}/.openshiftcomplete
@@ -639,7 +619,7 @@ EOF
 
 cd /home/${AUSERNAME}
 chmod 755 /home/${AUSERNAME}/openshift-install.sh
-echo "${RESOURCEGROUP} Bastion Host is starting OpenShift Install" | mail -s "${RESOURCEGROUP} Bastion OpenShift Install Starting" ${EMAILNOTIFY} || true
+echo "${RESOURCEGROUP} Host is starting OpenShift Install" | mail -s "${RESOURCEGROUP} OpenShift Install Starting" ${RHNUSERNAME} || true
 /home/${AUSERNAME}/openshift-install.sh &> /home/${AUSERNAME}/openshift-install.out &
 chmod 755 /home/${AUSERNAME}/openshift-postinstall.sh
 /home/${AUSERNAME}/openshift-postinstall.sh &> /home/${AUSERNAME}/openshift-postinstall.out &
