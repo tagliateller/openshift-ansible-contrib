@@ -258,7 +258,8 @@ openshift_node_local_quota_per_fsgroup=512Mi
 azure_resource_group=${RESOURCEGROUP}
 rhn_pool_id=${RHNPOOLID}
 openshift_install_examples=true
-deployment_type=openshift-enterprise
+#deployment_type=openshift-enterprise
+deployment_type=origin
 openshift_master_identity_providers=[{'name': 'htpasswd_auth', 'login': 'true', 'challenge': 'true', 'kind': 'HTPasswdPasswordIdentityProvider', 'filename': '/etc/origin/master/htpasswd'}]
 openshift_master_manage_htpasswd=false
 
