@@ -53,8 +53,9 @@ Otherwise, even if there are differences between the two versions, installation 
 * Assigns Cinder volumes to the servers
 * Set up an `openshift` user with sudo privileges
 * Optionally attach Red Hat subscriptions
-* Set up a bind-based DNS server
-* When deploying more than one master, set up a HAproxy server
+* Sets up a bind-based DNS server or configures the cluster servers to use an external DNS server.
+* Supports mixed in-stack/external DNS servers for dynamic updates.
+* When deploying more than one master, sets up a HAproxy server
 
 
 ## Set up
@@ -69,14 +70,26 @@ Otherwise, even if there are differences between the two versions, installation 
 
 ### Update `inventory/group_vars/all.yml`
 
+#### DNS configuration variables
+
 Pay special attention to the values in the first paragraph -- these
 will depend on your OpenStack environment.
+
+Note that the provsisioning playbooks update the original Neutron subnet
+created with the Heat stack to point to the configured DNS servers.
+So the provisioned cluster nodes will start using those natively as
+default nameservers. Technically, this allows to deploy OpenShift clusters
+without dnsmasq proxies.
 
 The `env_id` and `public_dns_domain` will form the cluster's DNS domain all
 your servers will be under. With the default values, this will be
 `openshift.example.com`. For workloads, the default subdomain is 'apps'.
 That sudomain can be set as well by the `openshift_app_domain` variable in
 the inventory.
+
+The `openstack_<role name>_hostname` is a set of variables used for customising
+hostnames of servers with a given role. When such a variable stays commented,
+default hostname (usually the role name) is used.
 
 The `public_dns_nameservers` is a list of DNS servers accessible from all
 the created Nova servers. These will be serving as your DNS forwarders for
@@ -89,36 +102,100 @@ daemon that in turn proxies DNS requests to the authoritative DNS server.
 When Network Manager is enabled for provisioned cluster nodes, which is
 normally the case, you should not change the defaults and always deploy dnsmasq.
 
-Note that the authoritative DNS server is configured on post provsision
-steps, and the Neutron subnet for the Heat stack is updated to point to that
-server in the end. So the provisioned servers will start using it natively
-as a default nameserver that comes from the NetworkManager and cloud-init.
+`external_nsupdate_keys` describes an external authoritative DNS server(s)
+processing dynamic records updates in the public and private cluster views:
+
+    external_nsupdate_keys:
+      public:
+        key_secret: <some nsupdate key>
+        key_algorithm: 'hmac-md5'
+        key_name: 'update-key'
+        server: <public DNS server IP>
+      private:
+        key_secret: <some nsupdate key 2>
+        key_algorithm: 'hmac-sha256'
+        server: <public or private DNS server IP>
+
+Here, for the public view section, we specified another key algorithm and
+optional `key_name`, which normally defaults to the cluster's DNS domain.
+This just illustrates a compatibility mode with a DNS service deployed
+by OpenShift on OSP10 reference architecture, and used in a mixed mode with
+another external DNS server.
+
+Another example defines an external DNS server for the public view
+additionally to the in-stack DNS server used for the private view only:
+
+    external_nsupdate_keys:
+      public:
+        key_secret: <some nsupdate key>
+        key_algorithm: 'hmac-sha256'
+        server: <public DNS server IP>
+
+Here, updates matching the public view will be hitting the given public
+server IP. While updates matching the private view will be sent to the
+auto evaluated in-stack DNS server's **public** IP.
+
+Note, for the in-stack DNS server, private view updates may be sent only
+via the public IP of the server. You can not send updates via the private
+IP yet. This forces the in-stack private server to have a floating IP.
+See also the [security notes](#security-notes)
+
+#### Other configuration variables
 
 `openstack_ssh_key` is a Nova keypair - you can see your keypairs with
 `openstack keypair list`. This guide assumes that its corresponding private
 key is `~/.ssh/openshift`, stored on the ansible admin (control) node.
 
-`openstack_default_image_name` is the name of the Glance image the
-servers will use. You can
-see your images with `openstack image list`.
+`openstack_default_image_name` is the default name of the Glance image the
+servers will use. You can see your images with `openstack image list`.
+In order to set a different image for a role, uncomment the line with the
+corresponding variable (e.g. `openstack_lb_image_name` for load balancer) and
+set its value to another available image name. `openstack_default_image_name`
+must stay defined as it is used as a default value for the rest of the roles.
 
-`openstack_default_flavor` is the Nova flavor the servers will use.
+`openstack_default_flavor` is the default Nova flavor the servers will use.
 You can see your flavors with `openstack flavor list`.
+In order to set a different flavor for a role, uncomment the line with the
+corresponding variable (e.g. `openstack_lb_flavor` for load balancer) and
+set its value to another available flavor. `openstack_default_flavor` must
+stay defined as it is used as a default value for the rest of the roles.
 
 `openstack_external_network_name` is the name of the Neutron network
 providing external connectivity. It is often called `public`,
 `external` or `ext-net`. You can see your networks with `openstack
 network list`.
 
+`openstack_private_network_name` is the name of the private Neutron network
+providing admin/control access for ansible. It can be merged with other
+cluster networks, there are no special requirements for networking.
+
 The `openstack_num_masters`, `openstack_num_infra` and
 `openstack_num_nodes` values specify the number of Master, Infra and
 App nodes to create.
 
 The `openshift_cluster_node_labels` defines custom labels for your openshift
-cluster node groups, like app or infra nodes. For example: `{'region': 'infra'}`.
+cluster node groups. It currently supports app and infra node groups.
+The default value of this variable sets `region: primary` to app nodes and
+`region: infra` to infra nodes.
+An example of setting a customised label:
+```
+openshift_cluster_node_labels:
+  app:
+    mylabel: myvalue
+```
 
 The `openstack_nodes_to_remove` allows you to specify the numerical indexes
 of App nodes that should be removed; for example, ['0', '2'],
+
+The `docker_volume_size` is the default Docker volume size the servers will use.
+In order to set a different volume size for a role,
+uncomment the line with the corresponding variable (e. g. `docker_master_volume_size`
+for master) and change its value. `docker_volume_size` must stay defined as it is
+used as a default value for some of the servers (master, infra, app node).
+The rest of the roles (etcd, load balancer, dns) have their defaults hard-coded.
+
+**Note**: If the `ephemeral_volumes` is set to `true`, the `*_volume_size` variables
+will be ignored and the deployment will not create any cinder volumes.
 
 The `openstack_flat_secgrp`, controls Neutron security groups creation for Heat
 stacks. Set it to true, if you experience issues with sec group rules
@@ -136,6 +213,19 @@ is yet to be supported, so the static inventory will be created anyway.
 The `openstack_inventory_path` points the directory to host the generated static inventory.
 It should point to the copied example inventory directory, otherwise ti creates
 a new one for you.
+
+#### Multi-master configuration
+
+Please refer to the official documentation for the
+[multi-master setup](https://docs.openshift.com/container-platform/3.6/install_config/install/advanced_install.html#multiple-masters)
+and define the corresponding [inventory
+variables](https://docs.openshift.com/container-platform/3.6/install_config/install/advanced_install.html#configuring-cluster-variables)
+in `inventory/group_vars/OSEv3.yml`. For example, given a load balancer node
+under the ansible group named `ext_lb`:
+
+    openshift_master_cluster_method: native
+    openshift_master_cluster_hostname: "{{ groups.ext_lb.0 }}"
+    openshift_master_cluster_public_hostname: "{{ groups.ext_lb.0 }}"
 
 #### Security notes
 
@@ -171,7 +261,6 @@ Note, that in order to deploy OpenShift origin, you should update the following
 variables for the `inventory/group_vars/OSEv3.yml`, `all.yml`:
 
     deployment_type: origin
-    origin_release: 1.5.1
     openshift_deployment_type: "{{ deployment_type }}"
 
 ### Configure static inventory and access via a bastion node
@@ -234,12 +323,76 @@ The first infra node then becomes a bastion node as well and proxies access
 for future ansible commands. The post-provision step also configures Satellite,
 if requested, and DNS server, and ensures other OpenShift requirements to be met.
 
+### Running Custom Post-Provision Actions
+
+A custom playbook can be run like this:
+
+```
+ansible-playbook --private-key ~/.ssh/openshift -i inventory/ openshift-ansible-contrib/playbooks/provisioning/openstack/custom-actions/custom-playbook.yml
+```
+
+If you'd like to limit the run to one particular host, you can do so as follows:
+
+```
+ansible-playbook --private-key ~/.ssh/openshift -i inventory/ openshift-ansible-contrib/playbooks/provisioning/openstack/custom-actions/custom-playbook.yml -l app-node-0.openshift.example.com
+```
+
+You can also create your own custom playbook. Here's one example that adds additional YUM repositories:
+
+```
+---
+- hosts: app
+  tasks:
+
+  # enable EPL
+  - name: Add repository
+    yum_repository:
+      name: epel
+      description: EPEL YUM repo
+      baseurl: https://download.fedoraproject.org/pub/epel/$releasever/$basearch/
+```
+
+This example runs against app nodes. The list of options include:
+
+  - cluster_hosts (all hosts: app, infra, masters, dns, lb)
+  - OSEv3 (app, infra, masters)
+  - app
+  - dns
+  - masters
+  - infra_hosts
+
+Please consider contributing your custom playbook back to openshift-ansible-contrib!
+
+A library of custom post-provision actions exists in `openshift-ansible-contrib/playbooks/provisioning/openstack/custom-actions`. Playbooks include:
+
+##### add-yum-repos.yml
+
+[add-yum-repos.yml](https://github.com/openshift/openshift-ansible-contrib/blob/master/playbooks/provisioning/openstack/custom-actions/add-yum-repos.yml) adds a list of custom yum repositories to every node in the cluster.
+
 ### Install OpenShift
 
 Once it succeeds, you can install openshift by running:
 
     ansible-playbook openshift-ansible/playbooks/byo/config.yml
 
+### Access UI
+
+OpenShift UI may be accessed via the 1st master node FQDN, port 8443.
+
+When using a bastion, you may want to make an SSH tunnel from your control node
+to access UI on the `https://localhost:8443`, with this inventory variable:
+
+   openshift_ui_ssh_tunnel: True
+
+Note, this requires sudo rights on the ansible control node and an absolute path
+for the `openstack_private_ssh_key`. You should also update the control node's
+`/etc/hosts`:
+
+    127.0.0.1 master-0.openshift.example.com
+
+In order to access UI, the ssh-tunnel service will be created and started on the
+control node. Make sure to remove these changes and the service manually, when not
+needed anymore.
 
 ## License
 
