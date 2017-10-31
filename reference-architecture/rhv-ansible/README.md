@@ -1,16 +1,34 @@
-# The Reference Architecture OpenShift on RHV
+# Reference Architecture:  OpenShift Container Platform on Red Hat Virtualization
 This repository contains the Ansible playbooks used to deploy 
 an OpenShift Container Platform environment on Red Hat Virtualization
 
 ## Overview
-This reference environment provides a comprehensive example demonstrating how Red Hat OpenShift Container Platform
+This reference architecture provides a comprehensive example demonstrating how Red Hat OpenShift Container Platform
 can be set up to take advantage of the native high availability capabilities of Kubernetes and Red Hat Virtualization
 in order to create a highly available OpenShift Container Platform environment.
 
 ## Prerequisites
 
+### Preparing the Deployment Host
+
+Ensure the deployment host (aka workstation host) is running Red Hat Enterprise
+Linux 7 and is registered and subscribed to at least the following channels:
+
+* rhel-7-server-rpms
+* rhel-7-server-extras-rpms
+
+The following commands should be issued from the deployment host (by preference from a
+regular user account with sudo access):
+
+```
+$ sudo yum install -y git ansible
+$ mkdir -p ~/git
+$ cd ~/git/ && git clone https://github.com/openshift/openshift-ansible-contrib
+$ cd ~/git/openshift-ansible-contrib && ansible-playbook playbooks/deploy-host.yaml -e provider=rhv
+```
+
 ### oVirt Ansible roles
-A copy of the [oVirt Ansible](https://github.com/ovirt/ovirt-ansible) repository should be cloned in a directory
+A copy of the [oVirt Ansible](https://github.com/ovirt/ovirt-ansible) repository will be cloned in a directory
 alongside this repository. Roles from within the ovirt-ansible repository will be called by playbooks in this one.
 
 ### Dynamic Inventory
@@ -18,7 +36,12 @@ A copy of `ovirt4.py` from the Ansible project is provided under the inventory d
 
 ### Red Hat Virtualization Certificate
 A copy of the `/etc/pki/ovirt-engine/ca.pem` from the RHV engine will need to be added to the
-`reference-architecture/rhv-ansible` directory.
+`reference-architecture/rhv-ansible` directory. Replace the example server in the following command to download the certificate:
+
+```
+$ curl --output ca.pem 'http://engine.example.com/ovirt-engine/services/pki-resource?resource=ca-certificate&format=X509-PEM-CA'
+
+```
 
 ### RHEL QCOW2 Image
 The ovirt-ansible role, ovirt-image-template requires a URL to download a QCOW2 KVM image to use as

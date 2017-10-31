@@ -28,3 +28,4 @@ ansible.log
 static-inventory
 *.retry
 roles/infra-ansible/
+roles/openshift-ansible/

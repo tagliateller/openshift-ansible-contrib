@@ -6,7 +6,7 @@
   ignore_errors: true
 
 - block:
-  - name: convert gcow2 image to raw image
+  - name: convert qcow2 image to raw image
     command: qemu-img convert -p -S 4096 -f qcow2 -O raw '{{ rhel_image_path }}' '{{ rhel_image_raw }}' creates='{{ rhel_image_raw }}'
 
   - name: archive raw image
@@ -31,11 +31,7 @@
     when: image_in_bucket_exists | failed
 
   - name: create gce image from the uploaded archive
-    gce_img:
-      name: '{{ rhel_image_gce }}'
-      family: '{{ rhel_image_gce_family }}'
-      source: '{{ rhel_image_in_bucket }}'
-      state: present
+    command: gcloud --project {{ gcloud_project }} compute images create {{ rhel_image_gce }} --source-uri {{ rhel_image_in_bucket }} --family {{ rhel_image_gce_family }}
 
   - name: delete bucket with uploaded archive
     command: gsutil -m rm -r {{ rhel_image_bucket }}

@@ -14,6 +14,7 @@
     hostname: "{{ vcenter_host }}"
     username: "{{ vcenter_username }}"
     password: "{{ vcenter_password }}"
+    validate_certs: False
     name: "{{ item.value.guestname }}"
     cluster: "{{ vcenter_cluster}}"
     datacenter: "{{ vcenter_datacenter }}"
@@ -33,6 +34,9 @@
     - size_gb: 40
       datastore: "{{ vcenter_datastore }}"
       type: thin
+    - size_gb: 40
+      datastore: "{{ vcenter_datastore }}"
+      type: thin
     hardware:
       memory_mb: 16384
     networks:
@@ -41,10 +45,10 @@
       netmask: "{{ vm_netmask }}"
       gateway: "{{ vm_gw }}"
     customization:
-      domain: "{{public_hosted_zone}}"
+      domain: "{{dns_zone}}"
       dns_servers:
       - "{{ vm_dns }}"
-      dns_suffix: "{{public_hosted_zone}}"
+      dns_suffix: "{{dns_zone}}"
       hostname: "{{ item.value.guestname}}"
   with_dict: "{{host_inventory}}"
   when: "'master' in item.value.guestname"
@@ -54,6 +58,7 @@
     hostname: "{{ vcenter_host }}"
     username: "{{ vcenter_username }}"
     password: "{{ vcenter_password }}"
+    validate_certs: False
     name: "{{ item.value.guestname }}"
     cluster: "{{ vcenter_cluster}}"
     datacenter: "{{ vcenter_datacenter }}"
@@ -81,10 +86,10 @@
       netmask: "{{ vm_netmask }}"
       gateway: "{{ vm_gw }}"
     customization:
-      domain: "{{public_hosted_zone}}"
+      domain: "{{dns_zone}}"
       dns_servers:
       - "{{ vm_dns }}"
-      dns_suffix: "{{public_hosted_zone}}"
+      dns_suffix: "{{dns_zone}}"
       hostname: "{{ item.value.guestname}}"
   with_dict: "{{host_inventory}}"
   when: "'infra' in item.value.guestname"
@@ -94,6 +99,7 @@
     hostname: "{{ vcenter_host }}"
     username: "{{ vcenter_username }}"
     password: "{{ vcenter_password }}"
+    validate_certs: False
     name: "{{ item.value.guestname }}"
     cluster: "{{ vcenter_cluster}}"
     datacenter: "{{ vcenter_datacenter }}"
@@ -121,15 +127,15 @@
       netmask: "{{ vm_netmask }}"
       gateway: "{{ vm_gw }}"
     customization:
-      domain: "{{public_hosted_zone}}"
+      domain: "{{dns_zone}}"
       dns_servers:
       - "{{ vm_dns }}"
-      dns_suffix: "{{public_hosted_zone}}"
+      dns_suffix: "{{dns_zone}}"
       hostname: "{{ item.value.guestname}}"
   with_dict: "{{host_inventory}}"
   when: "'app' in item.value.guestname"
 
 - name: Add production VMs to inventory
-  add_host: hostname="{{ item.value.guestname }}" ansible_ssh_host="{{ item.value.ip4addr }}" groups="{{ item.value.tag }}, production_group"
+  add_host: hostname="{{ item.value.guestname }}" ansible_fqdn="{{ item.value.guestname }}.{{ dns_zone }}" ansible_ssh_host="{{ item.value.ip4addr }}" groups="{{ item.value.tag }}, production_group"
   with_dict: "{{host_inventory}}"
   when: "'master' in item.value.guestname or 'app' in item.value.guestname or 'infra' in item.value.guestname"

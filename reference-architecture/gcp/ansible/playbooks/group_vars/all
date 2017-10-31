@@ -3,7 +3,6 @@
 # to user
 
 openshift_major_version: 6
-openshift_vers: v3_{{ openshift_major_version }}
 openshift_ansible_branch: release-3.{{ openshift_major_version }}
 openshift_required_repos:
 - rhel-7-server-rpms
@@ -29,3 +28,8 @@ gold_image_family: '{{ "rhel-guest-gold" if openshift_deployment_type == "opensh
 console_port: 443
 
 validate_etcd_short_hostname: true
+
+service_account: 'ocp-ansible'
+service_account_id: '{{ service_account }}@{{ gcloud_project }}.iam.gserviceaccount.com'
+service_account_name: 'OCP Ansible'
+credentials_file: '{{ inventory_dir }}/gce/hosts/project.json'

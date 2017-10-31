@@ -22,7 +22,7 @@ echo CONFIGURE THE INVENTORY
 
 export INVENTORY="$PWD/playbooks/provisioning/openstack/sample-inventory"
 
-mv "$INVENTORY"/ansible.cfg .
+cp playbooks/provisioning/openstack/ansible.cfg .
 
 PUBLIC_IP="$(curl --silent https://api.ipify.org)"
 
@@ -68,17 +68,8 @@ echo
 echo INSTALL OPENSHIFT
 
 ansible-galaxy install -r playbooks/provisioning/openstack/galaxy-requirements.yaml -p roles
-ansible-playbook --timeout 180 --user openshift --private-key ~/.ssh/id_rsa -i "$INVENTORY" playbooks/provisioning/openstack/provision.yaml -e @extra-vars.yaml
+ansible-playbook --timeout 180 --user openshift -i "$INVENTORY" playbooks/provisioning/openstack/provision.yaml -e @extra-vars.yaml
 
 echo
 echo INVENTORY hosts file:
 cat $INVENTORY/hosts
-
-
-echo SET UP DNS
-
-cp /etc/resolv.conf resolv.conf.orig
-DNS_IP=$(openstack server show dns-0.$ENV_ID.example.com --format value --column addresses | awk '{print $2}')
-grep -v '^nameserver' resolv.conf.orig > resolv.conf.openshift
-echo nameserver "$DNS_IP" >> resolv.conf.openshift
-sudo cp resolv.conf.openshift /etc/resolv.conf

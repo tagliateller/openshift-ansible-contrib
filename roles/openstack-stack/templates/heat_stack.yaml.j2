@@ -71,8 +71,12 @@ outputs:
     value: { get_attr: [ dns, private_ip ] }
 {% endif %}
 
+conditions:
+  no_floating: {% if provider_network or use_bastion|bool %}true{% else %}false{% endif %}
+
 resources:
 
+{% if not provider_network %}
   net:
     type: OS::Neutron::Net
     properties:
@@ -112,6 +116,22 @@ resources:
         - {{ nameserver }}
 {% endfor %}
 
+{% if openshift_use_flannel|default(False)|bool %}
+  data_net:
+    type: OS::Neutron::Net
+    properties:
+      name: openshift-ansible-{{ stack_name }}-data-net
+      port_security_enabled: false
+
+  data_subnet:
+    type: OS::Neutron::Subnet
+    properties:
+      name: openshift-ansible-{{ stack_name }}-data-subnet
+      network: { get_resource: data_net }
+      cidr: {{ osm_cluster_network_cidr|default('10.128.0.0/14') }}
+      gateway_ip: null
+{% endif %}
+
   router:
     type: OS::Neutron::Router
     properties:
@@ -128,6 +148,8 @@ resources:
     properties:
       router_id: { get_resource: router }
       subnet_id: { get_resource: subnet }
+
+{% endif %}
 
 #  keypair:
 #    type: OS::Nova::KeyPair
@@ -190,8 +212,12 @@ resources:
           port_range_max: 4001
         - direction: ingress
           protocol: tcp
-          port_range_min: 8443
-          port_range_max: 8444
+          port_range_min: {{ openshift_master_api_port|default(8443) }}
+          port_range_max: {{ openshift_master_api_port|default(8443) }}
+        - direction: ingress
+          protocol: tcp
+          port_range_min: {{ openshift_master_console_port|default(8443) }}
+          port_range_max: {{ openshift_master_console_port|default(8443) }}
         - direction: ingress
           protocol: tcp
           port_range_min: 8053
@@ -281,8 +307,12 @@ resources:
           port_range_max: 4001
         - direction: ingress
           protocol: tcp
-          port_range_min: 8443
-          port_range_max: 8444
+          port_range_min: {{ openshift_master_api_port|default(8443) }}
+          port_range_max: {{ openshift_master_api_port|default(8443) }}
+        - direction: ingress
+          protocol: tcp
+          port_range_min: {{ openshift_master_console_port|default(8443) }}
+          port_range_max: {{ openshift_master_console_port|default(8443) }}
         - direction: ingress
           protocol: tcp
           port_range_min: 8053
@@ -311,6 +341,12 @@ resources:
           protocol: tcp
           port_range_min: 9090
           port_range_max: 9090
+{% if openshift_use_flannel|default(False)|bool %}
+        - direction: ingress
+          protocol: tcp
+          port_range_min: 2379
+          port_range_max: 2379
+{% endif %}
 
   etcd-secgrp:
     type: OS::Neutron::SecurityGroup
@@ -477,18 +513,14 @@ resources:
     properties:
       count: {{ num_etcd }}
       resource_def:
-{% if use_bastion|bool %}
-        type: server_nofloating.yaml
-{% else %}
         type: server.yaml
-{% endif %}
         properties:
           name:
             str_replace:
               template: k8s_type-%index%.cluster_id
               params:
                 cluster_id: {{ stack_name }}
-                k8s_type: {{ etcd_hostname }}
+                k8s_type: {{ etcd_hostname | default('etcd') }}
           cluster_env: {{ public_dns_domain }}
           cluster_id:  {{ stack_name }}
           group:
@@ -498,26 +530,52 @@ resources:
                 k8s_type: etcds
                 cluster_id: {{ stack_name }}
           type:        etcd
-          image:       {{ openstack_etcd_image }}
+          image:       {{ openstack_etcd_image | default(openstack_image) }}
           flavor:      {{ etcd_flavor }}
           key_name:    {{ ssh_public_key }}
+{% if provider_network %}
+          net:         {{ provider_network }}
+          net_name:         {{ provider_network }}
+{% else %}
           net:         { get_resource: net }
           subnet:      { get_resource: subnet }
-          secgrp:
-            - { get_resource: {% if openstack_flat_secgrp|default(False)|bool %}flat-secgrp{% else %}etcd-secgrp{% endif %} }
-            - { get_resource: common-secgrp }
-{% if not use_bastion|bool %}
-          floating_network: {{ external_network }}
-{% endif %}
           net_name:
             str_replace:
               template: openshift-ansible-cluster_id-net
               params:
                 cluster_id: {{ stack_name }}
+{% endif %}
+          secgrp:
+            - { get_resource: {% if openstack_flat_secgrp|default(False)|bool %}flat-secgrp{% else %}etcd-secgrp{% endif %} }
+            - { get_resource: common-secgrp }
+          floating_network:
+            if:
+              - no_floating
+              - null
+              - {{ external_network }}
+{% if use_bastion|bool or provider_network %}
+          attach_float_net: false
+{% endif %}
           volume_size: {{ etcd_volume_size }}
+{% if not provider_network %}
     depends_on:
       - interface
+{% endif %}
 
+{% if master_server_group_policies|length > 0 %}
+  master_server_group:
+    type: OS::Nova::ServerGroup
+    properties:
+      name: master_server_group
+      policies: {{ master_server_group_policies }}
+{% endif %}
+{% if infra_server_group_policies|length > 0 %}
+  infra_server_group:
+    type: OS::Nova::ServerGroup
+    properties:
+      name: infra_server_group
+      policies: {{ infra_server_group_policies }}
+{% endif %}
 {% if num_masters|int > 1 %}
   loadbalancer:
     type: OS::Heat::ResourceGroup
@@ -531,7 +589,7 @@ resources:
               template: k8s_type-%index%.cluster_id
               params:
                 cluster_id: {{ stack_name }}
-                k8s_type: {{ lb_hostname }}
+                k8s_type: {{ lb_hostname | default('lb') }}
           cluster_env: {{ public_dns_domain }}
           cluster_id:  {{ stack_name }}
           group:
@@ -541,23 +599,32 @@ resources:
                 k8s_type: lb
                 cluster_id: {{ stack_name }}
           type:        lb
-          image:       {{ openstack_lb_image }}
+          image:       {{ openstack_lb_image | default(openstack_image) }}
           flavor:      {{ lb_flavor }}
           key_name:    {{ ssh_public_key }}
+{% if provider_network %}
+          net:         {{ provider_network }}
+          net_name:         {{ provider_network }}
+{% else %}
           net:         { get_resource: net }
           subnet:      { get_resource: subnet }
-          secgrp:
-            - { get_resource: lb-secgrp }
-            - { get_resource: common-secgrp }
-          floating_network: {{ external_network }}
           net_name:
             str_replace:
               template: openshift-ansible-cluster_id-net
               params:
                 cluster_id: {{ stack_name }}
+{% endif %}
+          secgrp:
+            - { get_resource: lb-secgrp }
+            - { get_resource: common-secgrp }
+{% if not provider_network %}
+          floating_network: {{ external_network }}
+{% endif %}
           volume_size: {{ lb_volume_size }}
+{% if not provider_network %}
     depends_on:
       - interface
+{% endif %}
 {% endif %}
 
   masters:
@@ -565,18 +632,14 @@ resources:
     properties:
       count: {{ num_masters }}
       resource_def:
-{% if use_bastion|bool %}
-        type: server_nofloating.yaml
-{% else %}
         type: server.yaml
-{% endif %}
         properties:
           name:
             str_replace:
               template: k8s_type-%index%.cluster_id
               params:
                 cluster_id: {{ stack_name }}
-                k8s_type: {{ master_hostname }}
+                k8s_type: {{ master_hostname | default('master')}}
           cluster_env: {{ public_dns_domain }}
           cluster_id:  {{ stack_name }}
           group:
@@ -586,11 +649,26 @@ resources:
                 k8s_type: masters
                 cluster_id: {{ stack_name }}
           type:        master
-          image:       {{ openstack_master_image }}
+          image:       {{ openstack_master_image | default(openstack_image) }}
           flavor:      {{ master_flavor }}
           key_name:    {{ ssh_public_key }}
+{% if provider_network %}
+          net:         {{ provider_network }}
+          net_name:         {{ provider_network }}
+{% else %}
           net:         { get_resource: net }
           subnet:      { get_resource: subnet }
+          net_name:
+            str_replace:
+              template: openshift-ansible-cluster_id-net
+              params:
+                cluster_id: {{ stack_name }}
+{% if openshift_use_flannel|default(False)|bool %}
+          attach_data_net: true
+          data_net:    { get_resource: data_net }
+          data_subnet: { get_resource: data_subnet }
+{% endif %}
+{% endif %}
           secgrp:
 {% if openstack_flat_secgrp|default(False)|bool %}
             - { get_resource: flat-secgrp }
@@ -602,17 +680,23 @@ resources:
 {% endif %}
 {% endif %}
             - { get_resource: common-secgrp }
-{% if not use_bastion|bool %}
-          floating_network: {{ external_network }}
+          floating_network:
+            if:
+              - no_floating
+              - null
+              - {{ external_network }}
+{% if use_bastion|bool or provider_network %}
+          attach_float_net: false
 {% endif %}
-          net_name:
-            str_replace:
-              template: openshift-ansible-cluster_id-net
-              params:
-                cluster_id: {{ stack_name }}
           volume_size: {{ master_volume_size }}
+{% if master_server_group_policies|length > 0 %}
+          scheduler_hints:
+            group: { get_resource: master_server_group }
+{% endif %}
+{% if not provider_network %}
     depends_on:
       - interface
+{% endif %}
 
   compute_nodes:
     type: OS::Heat::ResourceGroup
@@ -621,18 +705,14 @@ resources:
       removal_policies:
       - resource_list: {{ nodes_to_remove }}
       resource_def:
-{% if use_bastion|bool %}
-        type: server_nofloating.yaml
-{% else %}
         type: server.yaml
-{% endif %}
         properties:
           name:
             str_replace:
               template: sub_type_k8s_type-%index%.cluster_id
               params:
                 cluster_id: {{ stack_name }}
-                sub_type_k8s_type: {{ node_hostname }}
+                sub_type_k8s_type: {{ node_hostname | default('app-node') }}
           cluster_env: {{ public_dns_domain }}
           cluster_id:  {{ stack_name }}
           group:
@@ -647,25 +727,42 @@ resources:
 {% for k, v in openshift_cluster_node_labels.app.iteritems() %}
             {{ k|e }}: {{ v|e }}
 {% endfor %}
-          image:       {{ openstack_node_image }}
+          image:       {{ openstack_node_image | default(openstack_image) }}
           flavor:      {{ node_flavor }}
           key_name:    {{ ssh_public_key }}
+{% if provider_network %}
+          net:         {{ provider_network }}
+          net_name:         {{ provider_network }}
+{% else %}
           net:         { get_resource: net }
           subnet:      { get_resource: subnet }
-          secgrp:
-            - { get_resource: {% if openstack_flat_secgrp|default(False)|bool %}flat-secgrp{% else %}node-secgrp{% endif %} }
-            - { get_resource: common-secgrp }
-{% if not use_bastion|bool %}
-          floating_network: {{ external_network }}
-{% endif %}
           net_name:
             str_replace:
               template: openshift-ansible-cluster_id-net
               params:
                 cluster_id: {{ stack_name }}
+{% if openshift_use_flannel|default(False)|bool %}
+          attach_data_net: true
+          data_net:    { get_resource: data_net }
+          data_subnet: { get_resource: data_subnet }
+{% endif %}
+{% endif %}
+          secgrp:
+            - { get_resource: {% if openstack_flat_secgrp|default(False)|bool %}flat-secgrp{% else %}node-secgrp{% endif %} }
+            - { get_resource: common-secgrp }
+          floating_network:
+            if:
+              - no_floating
+              - null
+              - {{ external_network }}
+{% if use_bastion|bool or provider_network %}
+          attach_float_net: false
+{% endif %}
           volume_size: {{ node_volume_size }}
+{% if not provider_network %}
     depends_on:
       - interface
+{% endif %}
 
   infra_nodes:
     type: OS::Heat::ResourceGroup
@@ -679,7 +776,7 @@ resources:
               template: sub_type_k8s_type-%index%.cluster_id
               params:
                 cluster_id: {{ stack_name }}
-                sub_type_k8s_type: {{ infra_hostname }}
+                sub_type_k8s_type: {{ infra_hostname | default('infranode') }}
           cluster_env: {{ public_dns_domain }}
           cluster_id:  {{ stack_name }}
           group:
@@ -694,11 +791,26 @@ resources:
 {% for k, v in openshift_cluster_node_labels.infra.iteritems() %}
             {{ k|e }}: {{ v|e }}
 {% endfor %}
-          image:       {{ openstack_infra_image }}
+          image:       {{ openstack_infra_image | default(openstack_image) }}
           flavor:      {{ infra_flavor }}
           key_name:    {{ ssh_public_key }}
+{% if provider_network %}
+          net:         {{ provider_network }}
+          net_name:         {{ provider_network }}
+{% else %}
           net:         { get_resource: net }
           subnet:      { get_resource: subnet }
+          net_name:
+            str_replace:
+              template: openshift-ansible-cluster_id-net
+              params:
+                cluster_id: {{ stack_name }}
+{% if openshift_use_flannel|default(False)|bool %}
+          attach_data_net: true
+          data_net:    { get_resource: data_net }
+          data_subnet: { get_resource: data_subnet }
+{% endif %}
+{% endif %}
           secgrp:
 # TODO(bogdando) filter only required node rules into infra-secgrp
 {% if openstack_flat_secgrp|default(False)|bool %}
@@ -711,15 +823,18 @@ resources:
 {% endif %}
             - { get_resource: infra-secgrp }
             - { get_resource: common-secgrp }
+{% if not provider_network %}
           floating_network: {{ external_network }}
-          net_name:
-            str_replace:
-              template: openshift-ansible-cluster_id-net
-              params:
-                cluster_id: {{ stack_name }}
+{% endif %}
           volume_size: {{ infra_volume_size }}
+{% if infra_server_group_policies|length > 0 %}
+          scheduler_hints:
+            group: { get_resource: infra_server_group }
+{% endif %}
+{% if not provider_network %}
     depends_on:
       - interface
+{% endif %}
 
 {% if num_dns|int > 0 %}
   dns:
@@ -734,7 +849,7 @@ resources:
               template: k8s_type-%index%.cluster_id
               params:
                 cluster_id: {{ stack_name }}
-                k8s_type: {{ dns_hostname }}
+                k8s_type: {{ dns_hostname | default('dns') }}
           cluster_env: {{ public_dns_domain }}
           cluster_id:  {{ stack_name }}
           group:
@@ -744,21 +859,30 @@ resources:
                 k8s_type: dns
                 cluster_id: {{ stack_name }}
           type:        dns
-          image:       {{ openstack_dns_image }}
+          image:       {{ openstack_dns_image | default(openstack_image) }}
           flavor:      {{ dns_flavor }}
           key_name:    {{ ssh_public_key }}
+{% if provider_network %}
+          net:         {{ provider_network }}
+          net_name:         {{ provider_network }}
+{% else %}
           net:         { get_resource: net }
           subnet:      { get_resource: subnet }
-          secgrp:
-            - { get_resource: dns-secgrp }
-            - { get_resource: common-secgrp }
-          floating_network: {{ external_network }}
           net_name:
             str_replace:
               template: openshift-ansible-cluster_id-net
               params:
                 cluster_id: {{ stack_name }}
+{% endif %}
+          secgrp:
+            - { get_resource: dns-secgrp }
+            - { get_resource: common-secgrp }
+{% if not provider_network %}
+          floating_network: {{ external_network }}
+{% endif %}
           volume_size: {{ dns_volume_size }}
+{% if not provider_network %}
     depends_on:
       - interface
+{% endif %}
 {% endif %}
