@@ -1,5 +1,22 @@
 #!/bin/bash
+# OpenShift namespaced objects:
+# oc get --raw /oapi/v1/ |  python -c 'import json,sys ; resources = "\n".join([o["name"] for o in json.load(sys.stdin)["resources"] if o["namespaced"] and "create" in o["verbs"] and "delete" in o["verbs"] ]) ; print resources'
+# Kubernetes namespaced objects:
+# oc get --raw /api/v1/ |  python -c 'import json,sys ; resources = "\n".join([o["name"] for o in json.load(sys.stdin)["resources"] if o["namespaced"] and "create" in o["verbs"] and "delete" in o["verbs"] ]) ; print resources'
+
 set -eo pipefail
+
+warnuser(){
+  cat << EOF
+###########
+# WARNING #
+###########
+This script is distributed WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND
+Beware ImageStreams objects are not importables due to the way they work
+See https://github.com/openshift/openshift-ansible-contrib/issues/967
+for more information
+EOF
+}
 
 die(){
   echo "$1"
@@ -11,50 +28,93 @@ usage(){
   echo "  projectname  The OCP project to be exported"
   echo "Examples:"
   echo "    $0 myproject"
+  warnuser
+}
+
+exportlist(){
+  if [ "$#" -lt "3" ]; then
+    echo "Invalid parameters"
+    return
+  fi
+
+  KIND=$1
+  BASENAME=$2
+  DELETEPARAM=$3
+
+  echo "Exporting '${KIND}' resources to ${PROJECT}/${BASENAME}.json"
+
+  BUFFER=$(oc get ${KIND} --export -o json -n ${PROJECT} || true)
+
+  # return if resource type unknown or access denied
+  if [ -z "${BUFFER}" ]; then
+    echo "Skipped: no data"
+    return
+  fi
+
+  # return if list empty
+  if [ $(echo ${BUFFER} | jq '.items | length > 0') == "false" ]; then
+    echo "Skipped: list empty"
+    return
+  fi
+
+  echo ${BUFFER} | jq ${DELETEPARAM} > ${PROJECT}/${BASENAME}.json
 }
 
 ns(){
-  echo "Exporting namespace to ${PROJECT}/ns.json"
-  oc get --export -o=json ns/${PROJECT} | jq '
-    del(.status,
-      .metadata.uid,
-      .metadata.selfLink,
-      .metadata.resourceVersion,
-      .metadata.creationTimestamp,
-      .metadata.generation
-      )' > ${PROJECT}/ns.json
+  exportlist \
+    ns \
+    ns \
+    'del('\
+'.items[].status,'\
+'.items[].metadata.uid,'\
+'.items[].metadata.selfLink,'\
+'.items[].metadata.resourceVersion,'\
+'.items[].metadata.creationTimestamp,'\
+'.items[].metadata.generation)'
 }
 
 rolebindings(){
-  echo "Exporting rolebindings to ${PROJECT}/rolebindings.json"
-  oc get --export -o=json rolebindings -n ${PROJECT} | jq '.items[] |
-  del(.metadata.uid,
-      .metadata.selfLink,
-      .metadata.resourceVersion,
-      .metadata.creationTimestamp
-      )' > ${PROJECT}/rolebindings.json
+  exportlist \
+    rolebindings \
+    rolebindings \
+    'del('\
+'.items[].metadata.uid,'\
+'.items[].metadata.selfLink,'\
+'.items[].metadata.resourceVersion,'\
+'.items[].metadata.creationTimestamp)'
 }
 
 serviceaccounts(){
-  echo "Exporting serviceaccounts to ${PROJECT}/serviceaccounts.json"
-  oc get --export -o=json serviceaccounts -n ${PROJECT} | jq '.items[] |
-    del(.metadata.uid,
-        .metadata.selfLink,
-        .metadata.resourceVersion,
-        .metadata.creationTimestamp
-        )' > ${PROJECT}/serviceaccounts.json
+  exportlist \
+    serviceaccounts \
+    serviceaccounts \
+    'del('\
+'.items[].metadata.uid,'\
+'.items[].metadata.selfLink,'\
+'.items[].metadata.resourceVersion,'\
+'.items[].metadata.creationTimestamp)'
 }
 
 secrets(){
-  echo "Exporting secrets to ${PROJECT}/secrets.json"
-  oc get --export -o=json secrets -n ${PROJECT} | jq '.items[] |
-    select(.type!="kubernetes.io/service-account-token") |
-    del(.metadata.uid,
-        .metadata.selfLink,
-        .metadata.resourceVersion,
-        .metadata.creationTimestamp,
-        .metadata.annotations."kubernetes.io/service-account.uid"
-        )' > ${PROJECT}/secrets.json
+  exportlist \
+    secrets \
+    secrets \
+    'del('\
+'.items[]|select(.type=='\
+'"'\
+'kubernetes.io/service-account-token'\
+'"'\
+'))|'\
+'del('\
+'.items[].metadata.uid,'\
+'.items[].metadata.selfLink,'\
+'.items[].metadata.resourceVersion,'\
+'.items[].metadata.creationTimestamp,'\
+'.items[].metadata.annotations.'\
+'"'\
+'kubernetes.io/service-account.uid'\
+'"'\
+')'
 }
 
 dcs(){
@@ -82,126 +142,333 @@ dcs(){
 }
 
 bcs(){
-  echo "Exporting buildconfigs to ${PROJECT}/bcs.json"
-  oc get --export -o=json bc -n ${PROJECT} | jq '.items[] |
-    del(.status,
-        .metadata.uid,
-        .metadata.selfLink,
-        .metadata.resourceVersion,
-        .metadata.creationTimestamp,
-        .metadata.generation,
-        .spec.triggers[].imageChangeParams.lastTriggeredImage
-        )' > ${PROJECT}/bcs.json
+  exportlist \
+    bc \
+    bcs \
+    'del('\
+'.items[].status,'\
+'.items[].metadata.uid,'\
+'.items[].metadata.selfLink,'\
+'.items[].metadata.resourceVersion,'\
+'.items[].metadata.generation,'\
+'.items[].spec.triggers[].imageChangeParams.lastTriggeredImage)'
 }
 
 builds(){
-  echo "Exporting builds to ${PROJECT}/builds.json"
-  oc get --export -o=json builds -n ${PROJECT} | jq '.items[] |
-    del(.status,
-        .metadata.uid,
-        .metadata.selfLink,
-        .metadata.resourceVersion,
-        .metadata.creationTimestamp,
-        .metadata.generation
-        )' > ${PROJECT}/builds.json
+  exportlist \
+    builds \
+    builds \
+    'del('\
+'.items[].status,'\
+'.items[].metadata.uid,'\
+'.items[].metadata.selfLink,'\
+'.items[].metadata.resourceVersion,'\
+'.items[].metadata.creationTimestamp,'\
+'.items[].metadata.generation)'
 }
 
 is(){
-  echo "Exporting imagestreams to ${PROJECT}/iss.json"
-  oc get --export -o=json is -n ${PROJECT} | jq '.items[] |
-    del(.status,
-        .metadata.uid,
-        .metadata.selfLink,
-        .metadata.resourceVersion,
-        .metadata.creationTimestamp,
-        .metadata.generation,
-        .metadata.annotations."openshift.io/image.dockerRepositoryCheck"
-        )' > ${PROJECT}/iss.json
+  exportlist \
+    is \
+    iss \
+    'del('\
+'.items[].status,'\
+'.items[].metadata.uid,'\
+'.items[].metadata.selfLink,'\
+'.items[].metadata.resourceVersion,'\
+'.items[].metadata.creationTimestamp,'\
+'.items[].metadata.generation,'\
+'.items[].metadata.annotations."openshift.io/image.dockerRepositoryCheck")'
 }
 
 rcs(){
-  echo "Exporting replicationcontrollers to ${PROJECT}/rcs.json"
-  oc get --export -o=json rc -n ${PROJECT} | jq '.items[] |
-    del(.status,
-        .metadata.uid,
-        .metadata.selfLink,
-        .metadata.resourceVersion,
-        .metadata.creationTimestamp,
-        .metadata.generation
-        )' > ${PROJECT}/rcs.json
+  exportlist \
+    rc \
+    rcs \
+    'del('\
+'.items[].status,'\
+'.items[].metadata.uid,'\
+'.items[].metadata.selfLink,'\
+'.items[].metadata.resourceVersion,'\
+'.items[].metadata.creationTimestamp,'\
+'.items[].metadata.generation)'
 }
 
 svcs(){
-  echo "Exporting services to ${PROJECT}/svcs.json"
-  oc get --export -o=json svc -n ${PROJECT} | jq '.items[] |
-    del(.status,
-        .metadata.uid,
-        .metadata.selfLink,
-        .metadata.resourceVersion,
-        .metadata.creationTimestamp,
-        .metadata.generation,
-        .spec.clusterIP
-        )' > ${PROJECT}/svcs.json
+  echo "Exporting services to ${PROJECT}/svc_*.json"
+  SVCS=$(oc get svc -n ${PROJECT} -o jsonpath="{.items[*].metadata.name}")
+  for svc in ${SVCS}; do
+    oc get --export -o=json svc ${svc} -n ${PROJECT} | jq '
+      del(.status,
+            .metadata.uid,
+            .metadata.selfLink,
+            .metadata.resourceVersion,
+            .metadata.creationTimestamp,
+            .metadata.generation,
+            .spec.clusterIP
+            )' > ${PROJECT}/svc_${svc}.json
+    if [[ $(cat ${PROJECT}/svc_${svc}.json | jq -e '.spec.selector.app') == "null" ]]; then
+      oc get --export -o json endpoints ${svc} -n ${PROJECT}| jq '
+        del(.status,
+            .metadata.uid,
+            .metadata.selfLink,
+            .metadata.resourceVersion,
+            .metadata.creationTimestamp,
+            .metadata.generation
+            )' > ${PROJECT}/endpoint_${svc}.json
+    fi
+  done
 }
 
 pods(){
-  echo "Exporting pods to ${PROJECT}/pods.json"
-  oc get --export -o=json pod -n ${PROJECT} | jq '.items[] |
-    del(.status,
-        .metadata.uid,
-        .metadata.selfLink,
-        .metadata.resourceVersion,
-        .metadata.creationTimestamp,
-        .metadata.generation
-        )' > ${PROJECT}/pods.json
+  exportlist \
+    po \
+    pods \
+    'del('\
+'.items[].status,'\
+'.items[].metadata.uid,'\
+'.items[].metadata.selfLink,'\
+'.items[].metadata.resourceVersion,'\
+'.items[].metadata.creationTimestamp,'\
+'.items[].metadata.generation)'
 }
 
 cms(){
-  echo "Exporting configmaps to ${PROJECT}/cms.json"
-  oc get --export -o=json configmaps -n ${PROJECT} | jq '.items[] |
-    del(.status,
-        .metadata.uid,
-        .metadata.selfLink,
-        .metadata.resourceVersion,
-        .metadata.creationTimestamp,
-        .metadata.generation
-        )' > ${PROJECT}/cms.json
+  exportlist \
+    cm \
+    cms \
+    'del('\
+'.items[].status,'\
+'.items[].metadata.uid,'\
+'.items[].metadata.selfLink,'\
+'.items[].metadata.resourceVersion,'\
+'.items[].metadata.creationTimestamp,'\
+'.items[].metadata.generation)'
 }
 
 pvcs(){
-  echo "Exporting pvcs to ${PROJECT}/pvcs.json"
-  oc get --export -o=json pvc -n ${PROJECT} | jq '.items[] |
-    del(.status,
-        .metadata.uid,
-        .metadata.selfLink,
-        .metadata.resourceVersion,
-        .metadata.creationTimestamp,
-        .metadata.generation
-        )' > ${PROJECT}/pvcs.json
+  exportlist \
+    pvc \
+    pvcs \
+    'del('\
+'.items[].status,'\
+'.items[].metadata.uid,'\
+'.items[].metadata.selfLink,'\
+'.items[].metadata.resourceVersion,'\
+'.items[].metadata.creationTimestamp,'\
+'.items[].metadata.generation,'\
+'.items[].metadata.annotations['\
+'"'\
+'pv.kubernetes.io/bind-completed'\
+'"'\
+'],'\
+'.items[].metadata.annotations['\
+'"'\
+'pv.kubernetes.io/bound-by-controller'\
+'"'\
+'],'\
+'.items[].metadata.annotations['\
+'"'\
+'volume.beta.kubernetes.io/storage-provisioner'\
+'"'\
+'],'\
+'.items[].spec.volumeName)'
+}
+
+pvcs_attachment(){
+  exportlist \
+    pvc \
+    pvcs_attachment \
+    'del('\
+'.items[].status,'\
+'.items[].metadata.uid,'\
+'.items[].metadata.selfLink,'\
+'.items[].metadata.resourceVersion,'\
+'.items[].metadata.creationTimestamp,'\
+'.items[].metadata.generation)'
 }
 
 routes(){
-  echo "Exporting routes to ${PROJECT}/routes.json"
-  oc get --export -o=json routes -n ${PROJECT} | jq '.items[] |
-    del(.status,
-        .metadata.uid,
-        .metadata.selfLink,
-        .metadata.resourceVersion,
-        .metadata.creationTimestamp,
-        .metadata.generation
-        )' > ${PROJECT}/routes.json
+  exportlist \
+    routes \
+    routes \
+    'del('\
+'.items[].status,'\
+'.items[].metadata.uid,'\
+'.items[].metadata.selfLink,'\
+'.items[].metadata.resourceVersion,'\
+'.items[].metadata.creationTimestamp,'\
+'.items[].metadata.generation)'
 }
 
 templates(){
-  echo "Exporting templates to ${PROJECT}/templates.json"
-  oc get --export -o=json templates -n ${PROJECT} | jq '.items[] |
-    del(.status,
-        .metadata.uid,
-        .metadata.selfLink,
-        .metadata.resourceVersion,
-        .metadata.creationTimestamp,
-        .metadata.generation
-        )' > ${PROJECT}/templates.json
+  exportlist \
+    templates \
+    templates \
+    'del('\
+'.items[].status,'\
+'.items[].metadata.uid,'\
+'.items[].metadata.selfLink,'\
+'.items[].metadata.resourceVersion,'\
+'.items[].metadata.creationTimestamp,'\
+'.items[].metadata.generation)'
+}
+
+egressnetworkpolicies(){
+  exportlist \
+    egressnetworkpolicies \
+    egressnetworkpolicies \
+    'del('\
+'.items[].metadata.uid,'\
+'.items[].metadata.selfLink,'\
+'.items[].metadata.resourceVersion,'\
+'.items[].metadata.creationTimestamp)'
+}
+
+imagestreamtags(){
+  exportlist \
+    imagestreamtags \
+    imagestreamtags \
+    'del('\
+'.items[].metadata.uid,'\
+'.items[].metadata.selfLink,'\
+'.items[].metadata.resourceVersion,'\
+'.items[].metadata.creationTimestamp,'\
+'.items[].tag.generation)'
+}
+
+rolebindingrestrictions(){
+  exportlist \
+    rolebindingrestrictions \
+    rolebindingrestrictions \
+    'del('\
+'.items[].metadata.uid,'\
+'.items[].metadata.selfLink,'\
+'.items[].metadata.resourceVersion,'\
+'.items[].metadata.creationTimestamp)'
+}
+
+limitranges(){
+  exportlist \
+    limitranges \
+    limitranges \
+    'del('\
+'.items[].metadata.uid,'\
+'.items[].metadata.selfLink,'\
+'.items[].metadata.resourceVersion,'\
+'.items[].metadata.creationTimestamp)'
+}
+
+resourcequotas(){
+  exportlist \
+    resourcequotas \
+    resourcequotas \
+    'del('\
+'.items[].metadata.uid,'\
+'.items[].metadata.selfLink,'\
+'.items[].metadata.resourceVersion,'\
+'.items[].metadata.creationTimestamp,'\
+'.items[].status)'
+}
+
+podpreset(){
+  exportlist \
+    podpreset \
+    podpreset \
+    'del('\
+'.items[].metadata.uid,'\
+'.items[].metadata.selfLink,'\
+'.items[].metadata.resourceVersion,'\
+'.items[].metadata.creationTimestamp)'
+}
+
+cronjobs(){
+  exportlist \
+    cronjobs \
+    cronjobs \
+    'del('\
+'.items[].metadata.uid,'\
+'.items[].metadata.selfLink,'\
+'.items[].metadata.resourceVersion,'\
+'.items[].metadata.creationTimestamp,'\
+'.items[].status)'
+}
+
+statefulsets(){
+  exportlist \
+    statefulsets \
+    statefulsets \
+    'del('\
+'.items[].metadata.uid,'\
+'.items[].metadata.selfLink,'\
+'.items[].metadata.resourceVersion,'\
+'.items[].metadata.creationTimestamp,'\
+'.items[].status)'
+}
+
+hpas(){
+  exportlist \
+    hpa \
+    hpas \
+    'del('\
+'.items[].metadata.uid,'\
+'.items[].metadata.selfLink,'\
+'.items[].metadata.resourceVersion,'\
+'.items[].metadata.creationTimestamp,'\
+'.items[].status)'
+}
+
+deployments(){
+  exportlist \
+    deploy \
+    deployments \
+    'del('\
+'.items[].metadata.uid,'\
+'.items[].metadata.selfLink,'\
+'.items[].metadata.resourceVersion,'\
+'.items[].metadata.creationTimestamp,'\
+'.items[].metadata.generation,'\
+'.items[].status)'
+}
+
+replicasets(){
+  exportlist \
+    replicasets \
+    replicasets \
+    'del('\
+'.items[].metadata.uid,'\
+'.items[].metadata.selfLink,'\
+'.items[].metadata.resourceVersion,'\
+'.items[].metadata.creationTimestamp,'\
+'.items[].metadata.generation,'\
+'.items[].status,'\
+'.items[].ownerReferences.uid)'
+}
+
+poddisruptionbudget(){
+  exportlist \
+    poddisruptionbudget \
+    poddisruptionbudget \
+    'del('\
+'.items[].metadata.uid,'\
+'.items[].metadata.selfLink,'\
+'.items[].metadata.resourceVersion,'\
+'.items[].metadata.creationTimestamp,'\
+'.items[].metadata.generation,'\
+'.items[].status)'
+}
+
+daemonset(){
+  exportlist \
+    daemonset \
+    daemonset \
+    'del('\
+'.items[].metadata.uid,'\
+'.items[].metadata.selfLink,'\
+'.items[].metadata.resourceVersion,'\
+'.items[].metadata.creationTimestamp,'\
+'.items[].metadata.generation,'\
+'.items[].status)'
 }
 
 if [[ ( $@ == "--help") ||  $@ == "-h" ]]
@@ -221,9 +488,11 @@ do
   command -v $i >/dev/null 2>&1 || die "$i required but not found" 3
 done
 
+warnuser
+
 PROJECT=${1}
 
-mkdir ${PROJECT}
+mkdir -p ${PROJECT}
 
 ns
 rolebindings
@@ -233,12 +502,26 @@ dcs
 bcs
 builds
 is
+imagestreamtags
 rcs
 svcs
 pods
+podpreset
 cms
+egressnetworkpolicies
+rolebindingrestrictions
+limitranges
+resourcequotas
 pvcs
+pvcs_attachment
 routes
 templates
+cronjobs
+statefulsets
+hpas
+deployments
+replicasets
+poddisruptionbudget
+daemonset
 
 exit 0
